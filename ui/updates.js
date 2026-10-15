@@ -6,7 +6,7 @@
     latest = s;
     document.querySelector('.version').textContent = s.currentVersion;
     get('updates-panel').querySelector('summary').textContent = s.release ? 'Application updates · Available' : 'Application updates';
-    get('update-version').textContent = `Installed: ${s.currentVersion}`;
+    get('update-version').textContent = `Running ${s.currentVersion} · ${s.settings.channel==='beta'?'Beta / test previews':'Stable'} · ${s.source}`;
     get('update-auto-check').checked = s.settings.automaticChecks;
     get('update-auto-download').checked = s.settings.automaticDownloads;
     get('update-channel').value = s.settings.channel;

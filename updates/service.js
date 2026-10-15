@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { compareVersions, parseVersion } from './version.js';
 import { assetURL, validateConfig, verifyManifest } from './manifest.js';
 import { openHTTPS, readHTTPS } from './transport.js';
+import {githubConfigured,githubReleaseURL,verifyGitHubRelease} from './github-release.js';
 
 export const defaults = Object.freeze({ automaticChecks: true, automaticDownloads: false, channel: 'stable' });
 function settings(value) {
@@ -53,11 +54,11 @@ export class UpdateService {
   }
   status() {
     let configured = false;
-    try { configured = validateConfig(this.config); } catch (error) { this.message = error.message; }
+    try { configured = githubConfigured(this.config)||validateConfig(this.config); } catch (error) { this.message = error.message; }
     return { currentVersion: this.currentVersion, settings: { ...this.preferences }, configured,
       running: this.running, lastChecked: this.lastChecked, message: this.message,
-      installationSupported: false,
-      release: this.candidate ? { version: this.candidate.manifest.version, notes: this.candidate.manifest.notes, channel: this.candidate.manifest.channel } : null };
+      installationSupported: false,source:githubConfigured(this.config)?`GitHub · ${this.config.repository}`:'Signed release manifest',
+      release: this.candidate ? { version: this.candidate.manifest.version, notes: this.candidate.manifest.notes, channel: this.candidate.manifest.channel,verification:this.candidate.manifest.verification??'signed-manifest' } : null };
   }
   saveSettings(value) {
     if (this.running) throw new Error('Wait for the update request to finish.');
@@ -78,7 +79,8 @@ export class UpdateService {
     if (automatic && !this.preferences.automaticChecks) return this.status();
     await this.exclusive(async () => {
       this.candidate = null;
-      if (!validateConfig(this.config)) { this.message = 'Release source and signing key are not configured. No network request was made.'; return; }
+      const github=githubConfigured(this.config);
+      if (!github&&!validateConfig(this.config)) { this.message = 'Release source and signing key are not configured. No network request was made.'; return; }
       const signal = AbortSignal.timeout(60000);
       const releases = [];
       // Bounded pagination: do not silently report "up to date" if the bound is exceeded.
@@ -93,27 +95,34 @@ export class UpdateService {
         try {
           const v = parseVersion(r.tag_name);
           return !r.draft && typeof r.prerelease === 'boolean' && (this.preferences.channel === 'beta' || !r.prerelease) &&
-            (r.prerelease ? v.pre[0] === 'beta' : !v.pre.length) && compareVersions(r.tag_name, this.currentVersion) > 0;
+            (r.prerelease ? github?Boolean(v.pre.length):v.pre[0] === 'beta' : !v.pre.length) && compareVersions(r.tag_name, this.currentVersion) > 0;
         } catch { return false; }
       }).sort((a, b) => compareVersions(b.tag_name, a.tag_name));
       if (eligible.length) {
         const r = eligible[0];
-        const envelope = JSON.parse(await readHTTPS(assetURL(this.config.repository, r.tag_name, 'worldrenew-update.json'), 750000, { signal, open: this.open }));
-        const manifest = verifyManifest(envelope, this.config, { tag: r.tag_name, platform: this.platform, arch: this.arch, now: this.now() });
+        const envelope = github?{source:'github-releases',releaseId:r.id}:JSON.parse(await readHTTPS(assetURL(this.config.repository, r.tag_name, 'worldrenew-update.json'), 750000, { signal, open: this.open }));
+        const manifest = github?await this.githubManifest(envelope,r.tag_name):verifyManifest(envelope, this.config, { tag: r.tag_name, platform: this.platform, arch: this.arch, now: this.now() });
         if ((manifest.channel === 'beta') !== r.prerelease) throw new Error('Release channel does not match signed metadata.');
         this.candidate = { envelope, manifest };
-        this.message = `WorldRenew ${manifest.version} is available. Downloading does not install it.`;
-      } else this.message = 'No newer release is available for this channel.';
+        this.message = `WorldRenew ${manifest.version} is available. ${github?'Download is checked against GitHub’s SHA-256; the package is not publisher-signed. ':''}Downloading does not install it.`;
+      } else this.message = `No newer release is available for this channel. Running ${this.currentVersion}; older public releases will not replace it.`;
       this.lastChecked = new Date(this.now()).toISOString();
     });
     if (automatic && this.preferences.automaticDownloads && this.candidate && !this.isWorldBusy()) await this.stage();
     return this.status();
   }
+  async githubManifest(envelope,tag){
+    if(envelope.source!=='github-releases'||!githubConfigured(this.config))throw new Error('Update source changed. Check again.');
+    const release=JSON.parse(await readHTTPS(githubReleaseURL(this.config.repository,envelope.releaseId),750000,{signal:AbortSignal.timeout(60000),open:this.open}));
+    const manifest=verifyGitHubRelease(release,this.config,{platform:this.platform,arch:this.arch});
+    if(manifest.tag!==tag||manifest.releaseId!==envelope.releaseId)throw new Error('GitHub release identity changed. Check again.');return manifest;
+  }
   async stage() {
     await this.exclusive(async () => {
       if (!this.candidate) throw new Error('Check for a verified release first.');
       const { envelope, manifest: previous } = this.candidate;
-      const manifest = verifyManifest(envelope, this.config, { tag: previous.tag, platform: this.platform, arch: this.arch, now: this.now() });
+      const manifest = envelope.source==='github-releases'?await this.githubManifest(envelope,previous.tag):verifyManifest(envelope, this.config, { tag: previous.tag, platform: this.platform, arch: this.arch, now: this.now() });
+      if(manifest.package.sha256!==previous.package.sha256||manifest.package.size!==previous.package.size||manifest.package.name!==previous.package.name||manifest.package.id!==previous.package.id)throw new Error('Release asset changed since checking. Check again.');
       if (compareVersions(manifest.version, this.currentVersion) <= 0 || (this.preferences.channel === 'stable' && manifest.channel !== 'stable')) throw new Error('Update is no longer eligible.');
       const root = safeDirectory(this.directory), id = randomUUID(), temp = path.join(root, `${id}.partial`), final = path.join(root, id);
       fs.mkdirSync(temp, { mode: 0o700 });
@@ -125,14 +134,14 @@ export class UpdateService {
           try {
             for await (const chunk of stream) {
               size += chunk.length;
-              if (size > manifest.package.size) throw new Error('Package exceeds signed size.');
+              if (size > manifest.package.size) throw new Error('Package exceeds signed size or GitHub size.');
               hash.update(chunk); await file.writeFile(chunk);
             }
           } finally { stream.destroy(); }
           if (size !== manifest.package.size || hash.digest('hex') !== manifest.package.sha256) throw new Error('Package checksum or size verification failed.');
           await file.sync();
         } finally { await file.close(); }
-        atomicJSON(temp, 'release.json', envelope);
+        atomicJSON(temp, 'release.json', envelope.source==='github-releases'?{...envelope,package:manifest.package}:envelope);
         fs.renameSync(temp, final);
         atomicJSON(root, 'staged.json', { id, tag: manifest.tag });
         this.message = `Verified ${manifest.version} staged. Installation is manual; quit WorldRenew after all world operations finish. Keep your previous app for rollback.`;
@@ -149,7 +158,9 @@ export class UpdateService {
       if (!/^[a-f0-9-]{36}$/.test(record.id)) throw new Error('Invalid staged receipt.');
       const directory = safeDirectory(path.join(this.directory, record.id));
       const envelope = readJSON(path.join(directory, 'release.json'));
-      const manifest = verifyManifest(envelope, this.config, { tag: record.tag, platform: this.platform, arch: this.arch, now: this.now() });
+      const manifest = envelope.source==='github-releases'?await this.githubManifest(envelope,record.tag):verifyManifest(envelope, this.config, { tag: record.tag, platform: this.platform, arch: this.arch, now: this.now() });
+      if(compareVersions(manifest.version,this.currentVersion)<=0)throw new Error('Staged download is not newer than this app; refusing a downgrade or reinstall.');
+      if(envelope.source==='github-releases'&&(manifest.package.id!==envelope.package?.id||manifest.package.sha256!==envelope.package?.sha256))throw new Error('Published asset changed after download. Check again.');
       if (this.preferences.channel === 'stable' && manifest.channel !== 'stable') throw new Error('Staged package belongs to the Beta channel.');
       const file = path.join(directory, manifest.package.name), stat = fs.lstatSync(file);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== manifest.package.size) throw new Error('Staged package was modified.');

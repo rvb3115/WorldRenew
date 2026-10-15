@@ -1,4 +1,4 @@
-# WorldRenew 0.5.7-test.1 development test builds
+# WorldRenew 0.5.8-test.1 development test builds
 
 Standalone desktop tools for inspecting and preserving Minecraft Java Edition worlds. One shared application for Windows x64 and Apple Silicon macOS; no mod or separate Java/Node installation is required for packaged builds.
 
@@ -6,7 +6,7 @@ Standalone desktop tools for inspecting and preserving Minecraft Java Edition wo
 
 ## Development branch
 
-`feature/detailed-terrain` contains the next local test build. **0.5.7-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
+`feature/detailed-terrain` contains the next local test build. **0.5.8-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
 
 - [Detailed terrain map](TERRAIN-MAP.md): saved block colors and elevation shading, chunk grid, coordinate navigation, selection/protection, bounded asynchronous tiles and dimension-aware Nether cavern/roof views.
 - [Java 1.21.11 terrain compatibility](TERRAIN-1.21.11.md): schema-validated read-only map support for DataVersion 4671; existing 3D capture and export gates stay unchanged.

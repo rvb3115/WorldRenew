@@ -1,6 +1,7 @@
 import { TerrainMap } from './terrain-map.js';
 import { terrainHeights } from '../engine/terrain-policy.js';
 import { TopographicMap } from './topographic-map.js';
+import {applyChunkRange,selectionExtent} from './map-selection.js';
 /* Renderer has no filesystem access. The narrow preload bridge owns all requests. */
 const $ = id => document.getElementById(id), api = window.worldrenew;
 let world = null, dimension = null, chunks = [], protectedChunks = new Map(), selection = new Set(), dirty = false, busy = false;
@@ -10,6 +11,7 @@ let view = { x: 0, z: 0, scale: 8 }, gesture = null;
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const terrain = new TerrainMap(api, () => draw());
 let topographic = null, topographicActive = false;
+let selectionBounds=null, dimensionSelections=new Map();
 const key = (x, z) => `${x},${z}`;
 const protectionKey = (dimension, x, z) => `${dimension}:${x},${z}`;
 const fmt = value => value.toLocaleString();
@@ -19,7 +21,7 @@ function setBusy(value) {
   $('open-build-file').disabled=$('templates-open').disabled=value;
   $('open').disabled = $('open-empty').disabled = value;
   $('open-transfer').disabled = value || !world;
-  for (const id of ['rescan', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-view', 'topographic-north', 'map-jump', 'fit-selection']) $(id).disabled = value || !world;
+  for (const id of ['rescan', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-view', 'topographic-north', 'map-jump', 'fit-selection', 'selection-mode', 'select-all', 'select-range', 'view-scale', 'view-scale-reset']) $(id).disabled = value || !world;
   updateSelection();
   if (!value) draw();
 }
@@ -31,6 +33,7 @@ async function call(action, loading) {
 }
 function addDetail(name, value) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = name; dd.textContent = value ?? 'Unavailable'; $('metadata').append(dt, dd); }
 function load(value) {
+  dimensionSelections.clear();selection=new Set();dimension=null;
   terrainSession = value.terrainSession;
   world = value.report; protectedChunks = new Map(value.project.protection.map(c => [protectionKey(c.dimension, c.x, c.z), c])); dirty = false;
   $('world-name').textContent = world.metadata.name; $('world-path').textContent = world.root; $('world-path').title = world.root;
@@ -91,8 +94,9 @@ function invalidateRegeneration() {
 $('protection-buffer').onchange = () => { invalidateRegeneration(); draw(); };
 function changeDimension() {
   invalidateRegeneration();
+  if(dimension)dimensionSelections.set(dimension.key,selection);
   dimension = world?.dimensions.find(d => d.key === $('dimension').value) ?? null;
-  chunks = dimension ? dimension.regions.flatMap(r => r.chunks) : []; selection.clear();
+  chunks = dimension ? dimension.regions.flatMap(r => r.chunks) : []; selection=dimensionSelections.get(dimension?.key)??new Set();
   $('map-empty').hidden = chunks.length > 0 || dimension?.unreadableRegions?.length > 0 || !world; $('preview-result').textContent = 'Preview the chunks to remove from a separate copy.';
   configureTerrain(); fit(); updateSelection();
 }
@@ -122,7 +126,9 @@ $('terrain-y').onchange = () => {
 };
 $('dimension').onchange = changeDimension;
 function updateSelection() {
-  $('map-selection-summary').textContent = selection.size ? `${fmt(selection.size)} chunks selected for 3D preview` : 'Select an area for 3D preview';
+  selectionBounds=selectionExtent(selection);topographic?.setSelection(selection,selectionBounds);
+  $('map-selection-summary').textContent = selection.size ? `${fmt(selection.size)} chunks selected in this dimension · includes offscreen chunks` : 'No chunks selected in this dimension';
+  $('clear-map-selection').disabled=busy||!selection.size;
   $('fit-selection').disabled = busy || !selection.size;
   $('selection-count').textContent = fmt(selection.size); $('protected-count').textContent = fmt(protectedChunks.size);
   for (const id of ['protect', 'unprotect', 'clear-selection', 'preview']) $(id).disabled = busy || selection.size === 0;
@@ -144,7 +150,7 @@ function fit() {
     const scale = Math.max(0.000001, Math.min(128, (width - 70) / (maxX - minX + 1), (height - 70) / (maxZ - minZ + 1)));
     view = { scale, x: (minX + maxX + 1) / 2 - width / scale / 2, z: (minZ + maxZ + 1) / 2 - height / scale / 2 };
   }
-  if(topographicActive)topographic.setLocation((view.x+width/view.scale/2)*16,(view.z+height/view.scale/2)*16,160);
+  if(topographicActive)topographic.setLocation((view.x+width/view.scale/2)*16,(view.z+height/view.scale/2)*16,{resetScale:true});
   draw();
 }
 function ensureTopographic() {
@@ -157,7 +163,7 @@ function ensureTopographic() {
     onFailure:message=>{setMapView(false);status(message,true);},
     canInteract:()=>Boolean(world)&&!busy&&!window.transferBusy&&!window.templateBusy,
     tool:()=>$('map-tool').value
-  });return topographic;
+  });topographic.setSelection(selection,selectionBounds);return topographic;
 }
 function setMapView(enabled) {
   try {
@@ -165,16 +171,19 @@ function setMapView(enabled) {
     if(enabled)ensureTopographic();
     topographicActive=enabled;topographic?.setActive(enabled);
     canvas.style.visibility=enabled?'hidden':'visible';
-    for(const id of ['topographic-north','topographic-hint','topographic-overlay'])$(id).hidden=!enabled;
+    for(const id of ['topographic-north','topographic-hint','topographic-overlay','view-scale-panel'])$(id).hidden=!enabled;
+    $('map-container').classList.toggle('topographic-active',enabled);
     $('map-view').value=enabled?'topographic':'topdown';$('fit').textContent=enabled?'Center world':'Fit world';
     const orbit=$('map-tool').querySelector('[value="orbit"]');
     if(enabled&&!orbit){const option=document.createElement('option');option.value='orbit';option.textContent='Orbit';$('map-tool').append(option);}
     if(!enabled){if($('map-tool').value==='orbit')$('map-tool').value='select';orbit?.remove();}
-    if(enabled)topographic.setLocation(cx,cz,160);draw();
-  } catch(error){topographicActive=false;topographic?.setActive(false);$('map-view').value='topdown';$('topographic-map').hidden=true;for(const id of ['topographic-north','topographic-hint','topographic-overlay'])$(id).hidden=true;$('fit').textContent='Fit world';canvas.style.visibility='visible';status(`Topographic view unavailable: ${error.message}. Top-down remains available.`,true);draw();}
+    if(enabled)topographic.setLocation(cx,cz);draw();
+  } catch(error){topographicActive=false;topographic?.setActive(false);$('map-view').value='topdown';$('topographic-map').hidden=true;for(const id of ['topographic-north','topographic-hint','topographic-overlay','view-scale-panel'])$(id).hidden=true;$('map-container').classList.remove('topographic-active');$('fit').textContent='Fit world';canvas.style.visibility='visible';status(`Topographic view unavailable: ${error.message}. Top-down remains available.`,true);draw();}
 }
 $('map-view').onchange=()=>setMapView($('map-view').value==='topographic');
 $('topographic-north').onclick=()=>topographic?.north();
+$('view-scale').oninput=()=>topographic?.setScale(Number($('view-scale').value));
+$('view-scale-reset').onclick=()=>topographic?.resetScale();
 function draw() {
   if(topographicActive){topographic.update(terrain,(x,z)=>selection.has(key(x,z))?(regenerationMarks.get(protectionKey(dimension?.key,x,z))??'#81caff'):protectedChunks.has(protectionKey(dimension?.key,x,z))?'#b9e6a1':null);return;}
   const ratio = window.devicePixelRatio || 1, width = canvas.clientWidth, height = canvas.clientHeight;
@@ -215,9 +224,8 @@ function point(event) { const r = canvas.getBoundingClientRect(); return { x: ev
 function worldPoint(p) { return { x: Math.floor(view.x + p.x / view.scale), z: Math.floor(view.z + p.y / view.scale) }; }
 function selectArea(a, b) {
   invalidateRegeneration();
-  selection.clear();
+  selection=applyChunkRange(selection,chunks,a,b,$('selection-mode').value);
   const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x), minZ = Math.min(a.z, b.z), maxZ = Math.max(a.z, b.z);
-  for (const c of chunks) if (c.x >= minX && c.x <= maxX && c.z >= minZ && c.z <= maxZ) selection.add(key(c.x, c.z));
   $('x1').value = minX; $('x2').value = maxX; $('z1').value = minZ; $('z2').value = maxZ;
   updateSelection(); draw(); status(`${fmt(selection.size)} existing chunks selected.`);
 }
@@ -264,13 +272,13 @@ $('fit-selection').onclick = () => {
   for (const c of chosen) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); minZ = Math.min(minZ, c.z); maxZ = Math.max(maxZ, c.z); }
   view.scale = Math.min(256, (canvas.clientWidth - 60) / (maxX - minX + 1), (canvas.clientHeight - 60) / (maxZ - minZ + 1));
   view.x = (minX + maxX + 1) / 2 - canvas.clientWidth / view.scale / 2; view.z = (minZ + maxZ + 1) / 2 - canvas.clientHeight / view.scale / 2; draw();
-  if(topographicActive)topographic.setLocation((minX+maxX+1)*8,(minZ+maxZ+1)*8,Math.max(maxX-minX+1,maxZ-minZ+1)*16+32);
+  if(topographicActive)topographic.fitSelection();
 };
 $('map-jump').onclick = () => {
   const x = Number($('map-x').value), z = Number($('map-z').value);
   if (![$('map-x').value.trim(), $('map-z').value.trim()].every(Boolean) || ![x, z].every(n => Number.isInteger(n) && Math.abs(n) <= 30000000)) { status('Enter whole block coordinates within ±30,000,000.', true); return; }
   view.scale = Math.max(32, view.scale); view.x = x / 16 - canvas.clientWidth / view.scale / 2; view.z = z / 16 - canvas.clientHeight / view.scale / 2; draw();
-  if(topographicActive)topographic.setLocation(x,z,120);
+  if(topographicActive)topographic.setLocation(x,z);
 };
 $('select-area').onclick = () => {
   const values = ['x1', 'z1', 'x2', 'z2'].map(id => $(id).value.trim() === '' ? NaN : Number($(id).value));
@@ -278,6 +286,10 @@ $('select-area').onclick = () => {
   selectArea({ x: values[0], z: values[1] }, { x: values[2], z: values[3] });
 };
 $('clear-selection').onclick = () => { invalidateRegeneration(); selection.clear(); updateSelection(); draw(); };
+$('clear-map-selection').onclick=$('clear-selection').onclick;
+$('select-all').onclick=()=>{invalidateRegeneration();selection=new Set(chunks.map(c=>key(c.x,c.z)));updateSelection();draw();status(`All ${fmt(selection.size)} indexed chunks in this dimension selected, including offscreen chunks. Export and template limits apply separately.`);};
+$('select-range').onclick=()=>{if($('protection-panel').hidden)$('toggle-protection').click();$('x1').focus();};
+$('selection-mode').onchange=()=>{$('select-area').textContent={replace:'Replace selection with range',add:'Add range to selection',remove:'Remove range from selection'}[$('selection-mode').value];};
 function selectedChunks() { return [...selection].map(k => { const [x, z] = k.split(',').map(Number); return { dimension: dimension.key, x, z }; }); }
 $('protect').onclick = () => {
   invalidateRegeneration();

@@ -7,6 +7,10 @@ const { randomUUID } = require('node:crypto');
 
 app.setName('WorldRenew');
 if (process.env.WORLDRENEW_USER_DATA) app.setPath('userData', path.resolve(process.env.WORLDRENEW_USER_DATA));
+// Isolated automation can render without activating a window over the user's app.
+const backgroundTest=process.env.WORLDRENEW_BACKGROUND_TEST==='1'&&Boolean(process.env.WORLDRENEW_USER_DATA);
+if(backgroundTest&&process.platform==='darwin')app.setActivationPolicy('prohibited');
+const {defaultWorldDirectory,rememberedDirectory,rememberWorldDirectory}=require('./world-location.cjs');
 let win, current = null, busy = false, updater;
 let portableBuild=null,portableReview=null,lastPlacedCopy=null;
 let textureSource = null, regenerationReview = null, lastRegeneratedCopy = null;
@@ -93,8 +97,14 @@ app.whenReady().then(async () => {
     // Explicit CLI path supports repeatable local smoke tests without bypassing the engine.
     const arg = process.argv.find(a => a.startsWith('--world='));
     if (arg && !current) return inspect(arg.slice('--world='.length));
-    const choice = await dialog.showOpenDialog(win, { title: 'Choose a Minecraft Java world folder', properties: ['openDirectory'] });
-    return choice.canceled ? null : inspect(choice.filePaths[0]);
+    const userData=app.getPath('userData');
+    const defaultPath=defaultWorldDirectory({home:app.getPath('home'),appData:app.getPath('appData'),remembered:rememberedDirectory(userData)});
+    const choice = await dialog.showOpenDialog(win, { title: 'Choose a Minecraft Java world folder',buttonLabel:'Open world',defaultPath, properties: ['openDirectory'] });
+    if(choice.canceled)return null;
+    const result=await inspect(choice.filePaths[0]);
+    // A preference failure must not invalidate a successful read-only inspection.
+    try{rememberWorldDirectory(userData,choice.filePaths[0]);}catch{/* Use OS discovery next time. */}
+    return result;
   });
   handle('world:rescan', async () => { if (!current) throw new Error('Open a world first.'); return inspect(current.root); });
   handle('project:save', protection => { if (!current) throw new Error('Open a world first.'); return saveProject(projects, current, protection); });
@@ -217,7 +227,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   function createWindow() {
-    win = new BrowserWindow({ width: 1440, height: 950, minWidth: 1080, minHeight: 760, title: 'WorldRenew', backgroundColor: '#0d1518', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
+    win = new BrowserWindow({ width: 1440, height: 950, minWidth: 1080, minHeight: 760, show:!backgroundTest,title: 'WorldRenew', backgroundColor: '#0d1518', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,backgroundThrottling:!backgroundTest } });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.on('will-navigate', event => event.preventDefault());
     win.webContents.on('will-prevent-unload', event => {
@@ -235,6 +245,7 @@ app.whenReady().then(async () => {
   createWindow();
   // One startup check, deferred while world work is active. No install/restart hook exists.
   const startupCheck = setInterval(async () => {
+    if(backgroundTest){clearInterval(startupCheck);return;}
     if (busy || workers.size || updater.running) return;
     clearInterval(startupCheck);
     try { await updater.check({ automatic: true }); } catch { /* Available in update status. */ }

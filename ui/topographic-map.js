@@ -1,5 +1,6 @@
 import * as THREE from '../node_modules/three/build/three.module.js';
 import { topographicWindow, surfaceGeometry, pickedColumn, TOPO_CHUNK_LIMIT } from './topography-geometry.js';
+import {REFERENCE_DISTANCE,clampDistance,distanceForSlider,sliderForDistance,scaleLabel,fitSelectionDistance} from './view-scale.js';
 const key=(x,z)=>`${x},${z}`;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 export class TopographicMap {
@@ -9,15 +10,27 @@ export class TopographicMap {
     this.renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));this.renderer.setClearColor(0x101b1f);
     this.scene=new THREE.Scene();this.camera=new THREE.PerspectiveCamera(45,1,.1,3000);this.ray=new THREE.Raycaster();
     this.entries=new Map();this.materials=new Map();this.queue=[];this.active=false;this.frame=null;
-    this.x=0;this.z=0;this.y=64;this.distance=270;this.yaw=-.4;this.tilt=.83;this.origin={x:0,z:0};
+    this.x=0;this.z=0;this.y=64;this.distance=REFERENCE_DISTANCE;this.yaw=-.4;this.tilt=.83;this.origin={x:0,z:0};
+    this.selection=new Set();this.selectionBounds=null;
+    this.selectionOutline=new THREE.LineLoop(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x81caff,depthTest:false}));
+    this.selectionOutline.renderOrder=4;this.selectionOutline.visible=false;this.scene.add(this.selectionOutline);
     this.surfaceMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,toneMapped:false});
     this.bind();
     canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();this.unavailable=true;this.setActive(false);this.onFailure('Topographic graphics context was lost. Top-down remains available; reopen the app to retry 3D.');});
   }
   setActive(active){this.active=active;this.canvas.hidden=!active;if(!active){cancelAnimationFrame(this.frame);this.frame=null;this.gesture=null;}else this.requestFrame();}
-  setLocation(x,z,span=160){this.x=clamp(x,-30000000,30000000);this.z=clamp(z,-30000000,30000000);this.distance=clamp(span*1.65,55,520);this.focusHeight=true;this.changed();}
+  setLocation(x,z,{resetScale=false}={}){this.x=clamp(x,-30000000,30000000);this.z=clamp(z,-30000000,30000000);if(resetScale)this.distance=REFERENCE_DISTANCE;this.focusHeight=true;this.changed();}
   changed(){this.onNavigate(this.x,this.z);this.sync();this.requestFrame();}
-  zoom(factor){if(!this.canInteract())return;this.distance=clamp(this.distance/factor,35,600);this.requestFrame();}
+  syncScaleControl(){const slider=document.getElementById('view-scale');slider.value=String(sliderForDistance(this.distance));slider.setAttribute('aria-valuetext',scaleLabel(this.distance));document.getElementById('view-scale-value').textContent=scaleLabel(this.distance);}
+  zoom(factor){if(!this.canInteract())return;this.distance=clampDistance(this.distance/factor);this.syncScaleControl();this.requestFrame();}
+  setScale(value){if(!this.canInteract())return;this.distance=distanceForSlider(value);this.syncScaleControl();this.requestFrame();}
+  resetScale(){this.distance=REFERENCE_DISTANCE;this.syncScaleControl();this.requestFrame();}
+  setSelection(selection,bounds){this.selection=selection;this.selectionBounds=bounds;this.requestFrame();}
+  fitSelection(){
+    const b=this.selectionBounds;if(!b)return;
+    this.x=(b.minX+b.maxX+1)*8;this.z=(b.minZ+b.maxZ+1)*8;this.y=128;this.focusHeight=false;
+    this.distance=fitSelectionDistance(b,{aspect:this.canvas.clientWidth/this.canvas.clientHeight,yaw:this.yaw,tilt:this.tilt});this.changed();
+  }
   north(){this.yaw=0;this.tilt=.83;this.requestFrame();}
   update(terrain,mark){
     this.terrain=terrain;this.mark=mark;
@@ -91,13 +104,21 @@ export class TopographicMap {
     for(let i=0;i<2&&this.queue.length;i++){const next=this.queue.shift(),old=this.entries.get(next.id);if(old)this.disposeEntry(old);this.entries.set(next.id,this.createEntry(next));}
     const width=this.canvas.clientWidth,height=this.canvas.clientHeight;if(!width||!height)return;
     const size=this.renderer.getSize(new THREE.Vector2());if(size.x!==width||size.y!==height)this.renderer.setSize(width,height,false);
-    this.camera.aspect=width/height;this.camera.updateProjectionMatrix();
+    this.camera.aspect=width/height;this.camera.near=Math.max(.1,this.distance/1000000);this.camera.far=this.distance*4+2000;this.camera.updateProjectionMatrix();
     const target=new THREE.Vector3(this.x-this.origin.x,this.y,this.z-this.origin.z),horizontal=this.distance*Math.sin(this.tilt);
     this.camera.position.set(target.x+horizontal*Math.sin(this.yaw),target.y+this.distance*Math.cos(this.tilt),target.z+horizontal*Math.cos(this.yaw));this.camera.lookAt(target);this.camera.updateMatrixWorld();
+    const b=this.selectionBounds;this.selectionOutline.visible=Boolean(b);
+    if(b){
+      const points=[[b.minX*16,b.minZ*16],[(b.maxX+1)*16,b.minZ*16],[(b.maxX+1)*16,(b.maxZ+1)*16],[b.minX*16,(b.maxZ+1)*16]].map(([x,z])=>new THREE.Vector3(x-this.origin.x,this.y+1,z-this.origin.z));
+      this.selectionOutline.geometry.dispose();this.selectionOutline.geometry=new THREE.BufferGeometry().setFromPoints(points);
+    }
     this.renderer.render(this.scene,this.camera);
     const triangles=this.renderer.info.render.triangles;
     const counts={};for(const entry of this.entries.values())counts[entry.tile.status]=(counts[entry.tile.status]??0)+1;
-    Object.assign(this.canvas.dataset,{meshes:String(this.entries.size),triangles:String(triangles),building:String(this.queue.length),yaw:String(this.yaw),centerX:String(this.x),centerZ:String(this.z),states:JSON.stringify(counts),draws:String((Number(this.canvas.dataset.draws)||0)+1)});
+    const inWindow=topographicWindow(this.x,this.z).filter(c=>this.selection.has(key(c.x,c.z))).length;
+    Object.assign(this.canvas.dataset,{meshes:String(this.entries.size),triangles:String(triangles),building:String(this.queue.length),yaw:String(this.yaw),centerX:String(this.x),centerZ:String(this.z),distance:String(this.distance),viewScale:String(REFERENCE_DISTANCE/this.distance),selectedTotal:String(this.selection.size),selectedInWindow:String(inWindow),selectedOutside:String(this.selection.size-inWindow),states:JSON.stringify(counts),draws:String((Number(this.canvas.dataset.draws)||0)+1)});
+    this.syncScaleControl();
+    document.getElementById('topographic-selection-status').textContent=this.selection.size?`${this.selection.size.toLocaleString()} selected · ${inWindow} inside detail window · ${(this.selection.size-inWindow).toLocaleString()} outside retained. Blue rectangle is selection bounds; gaps may be unselected.`:'Selection can extend beyond the detail window. Use Add, Select range or Select all.';
     document.getElementById('topographic-position').textContent=`Center X ${Math.round(this.x)} · Z ${Math.round(this.z)} · rotation ${Math.round(this.yaw*180/Math.PI)}° · ${this.entries.size}/${TOPO_CHUNK_LIMIT} tiles`;
     if(this.queue.length)this.requestFrame();
   }

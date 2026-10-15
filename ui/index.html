@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.5-test.1</span></div>
+    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.8-test.1</span></div>
     <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="templates-open">Templates</button><button id="open-build-file">Import template…</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
   </header>
   <main>
@@ -27,14 +27,14 @@
         <label><input type="checkbox" id="update-auto-check"> Check automatically at startup</label>
         <label><input type="checkbox" id="update-auto-download"> Download verified updates automatically</label>
         <label for="update-channel">Release channel</label>
-        <select id="update-channel"><option value="stable">Stable</option><option value="beta">Beta · includes previews</option></select>
+        <select id="update-channel"><option value="stable">Stable</option><option value="beta">Beta · test previews included</option></select>
         <button id="update-save" class="full">Save update settings</button>
         <button id="update-check" class="full">Check for updates</button>
         <button id="update-download" class="full" disabled>Download verified update</button>
         <button id="update-reveal" class="full">Show verified download</button>
         <p id="update-status" class="small" role="status" aria-live="polite">Loading update settings…</p>
         <details><summary>Release notes</summary><pre id="update-notes"></pre></details>
-        <p class="small">Automatic installation is not available yet. After downloading, finish world operations and quit before installing. Keep the previous app or installer to roll back. App updates never upgrade or regenerate worlds.</p>
+        <p class="small">Downloads are checked against GitHub’s SHA-256. These test packages are unsigned. Automatic installation is not available. After downloading, finish world operations and quit before manually replacing the app or running the installer. Keep the previous app or installer to roll back. App updates never upgrade or regenerate worlds.</p>
       </details>
       <div class="eyebrow">Open world</div>
       <h2 id="world-name">No world open</h2>
@@ -49,11 +49,13 @@
         <div class="map-toolbar"><div><label for="dimension">Dimension</label><select id="dimension" disabled><option>Open a world first</option></select></div><div class="map-actions"><label for="map-tool">Tool</label><select id="map-tool"><option value="select">Select</option><option value="pan">Pan</option></select><button id="zoom-out" disabled aria-label="Zoom out">−</button><button id="zoom-in" disabled aria-label="Zoom in">+</button><button id="fit" disabled>Fit world</button><button id="fit-selection" disabled>Fit selection</button></div></div>
         <div class="terrain-controls"><label>Terrain <select id="terrain-mode" disabled><option value="surface">Top surface</option></select></label><label id="terrain-y-label" hidden>Y <input id="terrain-y" type="number" step="1" value="80"></label><div class="map-jump-fields"><label>Block X <input id="map-x" type="number" step="1" value="0"></label><label>Z <input id="map-z" type="number" step="1" value="0"></label><button id="map-jump" disabled>Go</button></div></div>
         <div class="terrain-controls map-view-controls"><label>View <select id="map-view" disabled><option value="topdown">Top-down</option><option value="topographic">3D topographic</option></select></label><button id="topographic-north" hidden>North / reset tilt</button><span id="topographic-hint" hidden>Surface only · no interiors. Click or drag to select · right-drag to orbit · Shift-drag to pan · scroll to zoom. Q/E rotate; arrows pan.</span></div>
+        <div class="terrain-controls selection-tools"><label>Selection <select id="selection-mode" disabled><option value="replace">Replace</option><option value="add">Add</option><option value="remove">Remove</option></select></label><button id="select-range" disabled>Select range…</button><button id="select-all" disabled>Select all in dimension</button><button id="clear-map-selection" disabled>Clear</button><span>Offscreen selections stay selected. Build and export limits apply separately.</span></div>
         <p id="terrain-note">Approximate surface colors and elevation shading. Chunk boundaries appear as you zoom in.</p>
         <div id="map-container">
           <canvas id="map" tabindex="0" aria-label="Terrain map. North is up. Drag to select chunks. Shift or right drag to pan; scroll or plus and minus to zoom. Arrow keys pan. Use Go to block coordinates and the protection panel for keyboard selection."></canvas>
           <canvas id="topographic-map" hidden tabindex="0" aria-label="Topographic surface map. Click or drag to select chunks. Right drag to orbit, Shift drag to pan, scroll to zoom. Q and E rotate; arrow keys pan. Use the protection panel for keyboard selection."></canvas>
-          <div id="topographic-overlay" hidden><span id="topographic-position"></span><span>11 × 11 chunk window · pan or Go to explore. Labeled plates mark unknown, absent or empty areas; they are not elevations.</span></div>
+          <aside id="view-scale-panel" hidden aria-label="Topographic view scale"><label for="view-scale">View scale</label><output id="view-scale-value" for="view-scale">1:1</output><span>Largest</span><input id="view-scale" type="range" min="0" max="20" step="0.1" value="20" aria-describedby="view-scale-note"><span>Smaller</span><button id="view-scale-reset">Reset 1:1</button><small id="view-scale-note">1:1 = default camera.<br>Display only; block size and coordinates stay unchanged.</small></aside>
+          <div id="topographic-overlay" hidden><span id="topographic-position"></span><span id="topographic-selection-status"></span><span>11 × 11 terrain detail window · pan or Go to explore. Outside this window, only selection bounds are drawn; terrain is not inferred.</span></div>
           <div id="empty-state"><h2>Open a Minecraft world</h2><p>Choose a save folder to see its map<br>and select a build to preview.</p><button id="open-empty" class="primary">Choose a world folder</button><small>No mods. No uploads. No changes to your save.</small></div>
           <div id="map-empty" hidden>No saved terrain chunks in this dimension.</div>
         </div>
