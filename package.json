@@ -1,6 +1,6 @@
 {
   "name": "worldrenew",
-  "version": "0.5.5-test.1",
+  "version": "0.5.6-test.1",
   "private": true,
   "description": "Read-only Minecraft Java world inspection and safe migration groundwork",
   "type": "module",

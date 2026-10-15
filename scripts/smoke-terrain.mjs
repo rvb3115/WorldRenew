@@ -8,7 +8,8 @@ import { makeTerrainWorld } from '../tests/terrain-fixtures.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 fs.mkdirSync(path.join(root, 'work'), { recursive: true });
 const work = fs.mkdtempSync(path.join(root, 'work/terrain-smoke-'));
-const fixture = makeTerrainWorld(path.join(work, 'synthetic-world'));
+const legacy12111 = process.argv.includes('--legacy-1.21.11');
+const fixture = makeTerrainWorld(path.join(work, 'synthetic-world'), legacy12111 ? { version: '1.21.11', dataVersion: 4671 } : {});
 const snapshot = () => fs.readdirSync(fixture, { recursive: true, withFileTypes: true }).filter(e => e.isFile()).map(e => { const file = path.join(e.parentPath, e.name); return [path.relative(fixture, file), createHash('sha256').update(fs.readFileSync(file)).digest('hex')]; });
 const before = snapshot(), env = { ...process.env, WORLDRENEW_USER_DATA: path.join(work, 'profile') }; delete env.ELECTRON_RUN_AS_NODE;
 const executablePath = process.env.WORLDRENEW_EXECUTABLE;
@@ -19,6 +20,7 @@ try {
   await page.click('#open');
   await page.waitForFunction(() => document.getElementById('terrain-status').dataset.ready === '106' && document.getElementById('terrain-status').dataset.failed === '1');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
+  if (legacy12111) { assert.match(await page.textContent('#metadata'), /1\.21\.11/); assert.match(await page.textContent('#metadata'), /4671/); }
   await page.screenshot({ path: path.join(work, 'terrain-overworld.png') });
   const colors = await page.evaluate(() => { const c = document.getElementById('map'), data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, colors = new Set(); for (let i = 0; i < data.length; i += 4) colors.add(`${data[i]},${data[i+1]},${data[i+2]}`); return colors.size; });
   assert.ok(colors > 50, 'Actual material and height shading must replace flat chunk colors.');
@@ -56,6 +58,6 @@ try {
   assert.equal(await page.locator('#terrain-mode option[value="caverns"]').count(), 0);
   await page.screenshot({ path: path.join(work, 'terrain-end.png') });
   assert.deepEqual(snapshot(), before, 'Map browsing must not write any source files.'); assert.deepEqual(errors, []);
-  const report = { passed: true, checks: ['material detail and relief', 'explicit malformed chunk', 'selection to 3D bounds', 'protection save', 'pan/zoom/coordinates', 'Nether cavern/roof', 'End void', 'stale dimension requests', 'source hashes unchanged'], screenshots: work };
+  const report = { passed: true, minecraftVersion: legacy12111 ? '1.21.11' : '26.3', fixtureOnly: true, checks: ['material detail and relief', 'explicit malformed chunk', 'selection to 3D bounds', 'protection save', 'pan/zoom/coordinates', 'Nether cavern/roof', 'End void', 'stale dimension requests', 'source hashes unchanged'], screenshots: work };
   fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2));
 } finally { await app.close(); }

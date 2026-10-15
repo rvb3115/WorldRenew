@@ -7,10 +7,12 @@ export const terrainHeights = Object.freeze({
   'minecraft:the_nether': { minY: 0, maxY: 255 },
   'minecraft:the_end': { minY: 0, maxY: 255 }
 });
+// Explicit read adapters, independent of every write/export version policy.
+export const terrainVersions = Object.freeze({ '1.21.11': 4671, '26.2': 4903, '26.3': 5023 });
 export function terrainSupport(metadata, dimension) {
-  const expected = { '26.2': 4903, '26.3': 5023 }[metadata?.version];
+  const expected = terrainVersions[metadata?.version];
   if (!expected || metadata.snapshot || metadata.dataVersion !== expected || metadata.versionId !== expected)
-    return 'Terrain preview supports stable Java 26.2 / 4903 and 26.3 / 5023 only. This world remains a chunk index; its terrain is unsupported.';
+    return 'Terrain preview supports stable Java 1.21.11 / 4671, 26.2 / 4903 and 26.3 / 5023 only. This world remains a chunk index; its terrain is unsupported.';
   if (!terrainHeights[dimension?.id]) return 'Custom dimension heights are unsupported. This view is a chunk index; no terrain is inferred.';
   return null;
 }

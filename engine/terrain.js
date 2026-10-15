@@ -5,7 +5,7 @@ import { createChunkReader, decodeSection, isAir } from './chunks.js';
 import { canonicalWorld, readBounded, safePath } from './paths.js';
 import { requireThat } from './errors.js';
 import { terrainColor } from './terrain-colors.js';
-import { terrainSupport, terrainHeights, TERRAIN_BATCH_LIMIT, TERRAIN_CACHE_LIMIT } from './terrain-policy.js';
+import { terrainSupport, terrainVersions, terrainHeights, TERRAIN_BATCH_LIMIT, TERRAIN_CACHE_LIMIT } from './terrain-policy.js';
 
 export function terrainOptions(metadata, dimension, request = {}) {
   const reason = terrainSupport(metadata, dimension);
@@ -20,17 +20,27 @@ export function terrainOptions(metadata, dimension, request = {}) {
     requireThat(Number.isInteger(request.y) && request.y >= minY && request.y <= maxY, 'TERRAIN_VIEW', `Choose a cutaway height from ${minY} to ${maxY}.`);
     maxY = request.y;
   }
-  return { mode, minY, maxY };
+  return { mode, minY, maxY, dataVersion: metadata.dataVersion };
 }
 
 /** A 16×16 tile derived from disk block states. No world or NBT data is mutated. */
 export function projectTerrain(nbt, options, dimensionId) {
-  requireThat([4903, 5023].includes(nbt.DataVersion), 'TERRAIN_UNSUPPORTED', 'Chunk DataVersion is unsupported; terrain was not inferred.');
+  requireThat(Object.values(terrainVersions).includes(nbt.DataVersion) && nbt.DataVersion <= options.dataVersion, 'TERRAIN_UNSUPPORTED', `Chunk DataVersion ${nbt.DataVersion ?? 'missing'} has no applicable terrain adapter for this world; terrain was not inferred.`);
   const heights = terrainHeights[dimensionId], sections = new Map();
+  // 1.21.11 uses the post-1.18 root section list and legacy Name/Properties
+  // palette compounds. Verify that exact schema, not just its version label.
+  if (nbt.DataVersion === 4671) {
+    requireThat(nbt.Level === undefined && nbt.Sections === undefined && Number.isInteger(nbt.xPos) && Number.isInteger(nbt.zPos) && ['minecraft:full', 'full'].includes(nbt.Status), 'TERRAIN_SCHEMA', 'Unsupported 1.21.11 chunk root or incomplete generation.');
+    requireThat(nbt.yPos === Math.floor(heights.minY / 16), 'TERRAIN_UNSUPPORTED', '1.21.11 chunk minimum section height is missing or non-vanilla; terrain was not inferred.');
+  }
   requireThat(Array.isArray(nbt.sections) && nbt.sections.length <= 32, 'TERRAIN_SECTIONS', 'Unsupported section list.');
   for (const section of nbt.sections) {
-    requireThat(Number.isInteger(section.Y) && !sections.has(section.Y), 'SECTION_DUPLICATE', 'Missing or duplicate section Y.');
+    requireThat(section && typeof section === 'object' && !Array.isArray(section) && Number.isInteger(section.Y) && !sections.has(section.Y), 'SECTION_DUPLICATE', 'Missing or duplicate section Y.');
     if (section.block_states) requireThat(section.Y >= Math.floor(heights.minY / 16) && section.Y <= Math.floor(heights.maxY / 16), 'TERRAIN_UNSUPPORTED', 'Custom dimension height is unsupported.');
+    if (nbt.DataVersion === 4671 && section.block_states) {
+      const palette = section.block_states.palette;
+      requireThat(Array.isArray(palette) && palette.length > 0 && palette.length <= 4096 && palette.every(entry => entry && typeof entry === 'object' && !Array.isArray(entry) && typeof entry.Name === 'string' && Object.keys(entry).every(key => key === 'Name' || key === 'Properties')), 'TERRAIN_SCHEMA', '1.21.11 requires Name/Properties block-state compounds; compact or mixed schemas are unsupported.');
+    }
     // Validate every supplied palette in the selected height range, even below a visible surface.
     sections.set(section.Y, section.block_states && section.Y >= Math.floor(options.minY / 16) && section.Y <= Math.floor(options.maxY / 16) ? decodeSection(section) : null);
   }
