@@ -1,0 +1,39 @@
+{
+  "name": "worldrenew",
+  "version": "0.5.3",
+  "private": true,
+  "description": "Read-only Minecraft Java world inspection and safe migration groundwork",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "test:desktop": "node scripts/smoke-desktop.mjs",
+    "test:real": "node scripts/test-real-world.mjs",
+    "demo": "node scripts/create-demo.mjs",
+    "inspect": "node scripts/inspect.mjs",
+    "package": "node scripts/package.mjs",
+    "test:transfer": "node scripts/smoke-transfer.mjs",
+    "test:textures": "node scripts/smoke-textures.mjs",
+    "test:models": "node scripts/smoke-models.mjs",
+    "test:archive": "node scripts/smoke-archive.mjs",
+    "demo:preservation": "node scripts/demo-preservation.mjs",
+    "test:updates": "node --test tests/updates.test.js",
+    "test:updates-desktop": "node scripts/smoke-updates.mjs",
+    "build:test:macos": "node scripts/test-build.mjs macos-arm64",
+    "build:test:windows": "node scripts/test-build.mjs windows-x64",
+    "test:packaged": "node scripts/smoke-packaged.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.4.5",
+    "electron-builder": "26.0.12",
+    "playwright": "1.58.2"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+work/
+*.log
+.DS_Store
+
+# Local review notes, credentials and Minecraft saves are never source artifacts.
+.local/
+*.mca
+*.mcc
+*.dat
+*.dat_old
+*.pem
+*.key
+
+node_modules
+
+# Unsigned test distributions
+artifacts/
