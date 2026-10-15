@@ -1,0 +1,38 @@
+import { _electron as electron } from 'playwright';
+import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {fileURLToPath} from 'node:url';import {createHash} from 'node:crypto';
+import {makeBlockWorld,state,writeBlockChunk} from '../tests/transfer-fixtures.js';
+import {validateTemplateStream} from '../engine/template-stream.js';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');fs.mkdirSync(path.join(root,'work'),{recursive:true});const work=fs.mkdtempSync(path.join(root,'work/template-editor-smoke-'));
+const source=makeBlockWorld(path.join(work,'source'),{version:'26.2',dataVersion:4903,block:(x,y)=>state(y===0?'oak_planks':x===0?'cave_air':'stone')});
+writeBlockChunk(path.join(source,'dimensions/minecraft/overworld/region/r.1.0.mca'),{x:32,dataVersion:4903,block:()=>state('stone')});
+const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const hashes=directory=>fs.readdirSync(directory,{recursive:true,withFileTypes:true}).filter(e=>e.isFile()).map(e=>{const p=path.join(e.parentPath,e.name);return [path.relative(directory,p),hash(p)];});const before=hashes(source);
+const profile=path.join(work,'profile'),env={...process.env,WORLDRENEW_USER_DATA:profile,WORLDRENEW_BACKGROUND_TEST:'1'};delete env.ELECTRON_RUN_AS_NODE;
+const executablePath=process.env.WORLDRENEW_EXECUTABLE;
+const launch=()=>electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:[root]),`--world=${source}`],env,timeout:30000});
+let app=await launch(),page;const errors=[];
+async function attach(){page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));}
+async function idle(){await page.waitForFunction(()=>!document.getElementById('template-replace').disabled);}
+async function count(value){await page.waitForFunction(v=>document.getElementById('template-selection-summary').dataset.blocks===v,value);await idle();}
+async function box(b,op='replace'){for(const [k,v]of Object.entries(b))await page.fill('#template-'+k,String(v));await page.click('#template-'+op);}
+async function slice(y,x=8,z=8){await page.fill('#template-slice-y',String(y));await page.locator('#template-slice-y').press('Tab');await page.fill('#template-center-x',String(x));await page.fill('#template-center-z',String(z));await page.click('#template-go');await page.waitForFunction(()=>document.getElementById('template-slice').dataset.pending==='0');assert.equal(await page.getAttribute('#template-slice','data-error'),'');}
+async function clickCell(x,z){const p=await page.locator('#template-slice').evaluate((c,{x,z})=>{const b=c.getBoundingClientRect(),size=Math.min(b.width-42,b.height-28),cell=size/Number(c.dataset.span);return {x:b.x+(b.width-size)/2+(x-Number(c.dataset.minX)+.5)*cell,y:b.y+20+(z-Number(c.dataset.minZ)+.5)*cell};},{x,z});await page.mouse.click(p.x,p.y);}
+try{
+ await attach();await page.click('#open');await page.waitForFunction(()=>!document.getElementById('create-template').disabled);await page.click('#create-template');await idle();
+ await slice(64);assert.ok(Number(await page.getAttribute('#template-slice','data-unreadable'))>0);assert.ok(Number(await page.getAttribute('#template-slice','data-absent'))>0);assert.equal(await page.getAttribute('#template-slice','data-ready'),'0');
+ await slice(-1);await page.selectOption('#template-tool','corners');await clickCell(0,0);await slice(1);await clickCell(1,1);await count('12');
+ assert.equal(await page.inputValue('#template-minY'),'-1');assert.equal(await page.inputValue('#template-maxY'),'1');
+ await box({minX:1,maxX:1,minY:0,maxY:0,minZ:1,maxZ:1},'remove');await count('11');
+ await box({minX:512,maxX:512,minY:0,maxY:0,minZ:0,maxZ:0},'add');await count('12');
+ await slice(1);await page.screenshot({path:path.join(work,'height-selection.png')});
+ await page.fill('#template-name','Basement and detached tower');await page.click('#template-save');await page.waitForFunction(()=>document.getElementById('template-editor-status').textContent.startsWith('Saved 12 cells'));
+ const file=path.join(profile,'templates/Basement and detached tower.wrbuild');const validation=validateTemplateStream(file);assert.equal(validation.summary.selectedBlocks,'12');assert.ok(BigInt(validation.summary.air)>0n);
+ const exported=path.join(work,'portable.wrbuild');await app.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},exported);await page.click('#template-export');await page.waitForFunction(()=>document.getElementById('template-editor-status').textContent.startsWith('Exported '));assert.equal(hash(file),hash(exported));
+ await page.click('#template-close');await page.click('#create-template');await count('12');await page.click('#template-close');assert.deepEqual(hashes(source),before);
+ await app.close();fs.renameSync(source,source+'-offline');app=await launch();await attach();await page.click('#templates-open');await page.waitForSelector('.template-row');await page.locator('.template-row').filter({hasText:'Basement and detached tower'}).getByRole('button',{name:'Open',exact:true}).click();
+ await page.waitForSelector('#template-editor[open]');await slice(1,1,1);assert.equal(await page.getAttribute('#template-slice','data-selected-visible'),'4');assert.equal(await page.textContent('#world-name'),'No world open');
+ await page.screenshot({path:path.join(work,'saved-template-source-offline.png')});
+ await slice(0,512,0);assert.equal(await page.getAttribute('#template-slice','data-selected-visible'),'1');
+ await app.close();fs.renameSync(source+'-offline',source);app=await launch();await attach();await page.click('#open');await page.waitForFunction(()=>!document.getElementById('create-template').disabled);await page.click('#create-template');await count('12');assert.deepEqual(hashes(source),before);assert.deepEqual(errors,[]);
+ const report={passed:true,checks:['unreadable sections differ from absent chunks','actual-Y corner picking across heights','sparse add and removal','selected air preserved','byte-exact portable export','persistent draft after restart','saved template previews without source','offscreen disconnected selection retained','source files unchanged','renderer has no uncaught errors'],screenshots:work,profile};fs.writeFileSync(path.join(work,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+}catch(error){if(page){console.error(await page.locator('#template-editor-status').textContent().catch(()=>''));await page.screenshot({path:path.join(work,'failure.png')}).catch(()=>{});}console.error('Evidence:',work);throw error;}finally{await app.close();}

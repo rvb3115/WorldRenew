@@ -1,4 +1,4 @@
-# WorldRenew 0.5.9-test.1 development test builds
+# WorldRenew 0.5.10-test.1 development test builds
 
 Standalone desktop tools for inspecting and preserving Minecraft Java Edition worlds. One shared application for Windows x64 and Apple Silicon macOS; no mod or separate Java/Node installation is required for packaged builds.
 
@@ -6,12 +6,13 @@ Standalone desktop tools for inspecting and preserving Minecraft Java Edition wo
 
 ## Development branch
 
-`feature/detailed-terrain` contains the next local test build. **0.5.9-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
+`feature/detailed-terrain` contains the next local test build. **0.5.10-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
 
 - [Detailed terrain map](TERRAIN-MAP.md): saved block colors and elevation shading, chunk grid, coordinate navigation, selection/protection, bounded asynchronous tiles and dimension-aware Nether cavern/roof views.
 - [Java 1.21.11 terrain compatibility](TERRAIN-1.21.11.md): schema-validated read-only map support for DataVersion 4671; existing 3D capture and export gates stay unchanged.
 - [Optional topographic view](TOPOGRAPHIC-MAP.md): tilted actual surface heights, chunk picking, orbit/pan/zoom and bounded geometry alongside top-down.
 - [Player, container and special-block preservation](PRESERVATION-SAFETY.md): reset blocks container/entity removal and uncertain inspection; untouched player files and level.dat are verified byte-for-byte.
+- [Persistent template editor](TEMPLATE-EDITOR.md): actual-height picking, inclusive lower/upper Y, sparse additions/removals, selected air and source-independent streaming archives.
 - [Local template library](LOCAL-TEMPLATES.md): named portable builds, import/export, drag-and-drop, safe duplicate names and reopening without the source world.
 - [Air-placement modes](AIR-PLACEMENT.md): preserve captured air or explicitly skip it, with counts and a fresh review before writing a separate copy.
 - [Vanilla/datapack compatibility](VANILLA-COMPATIBILITY.md): preserve recorded configuration without treating experimental flags as a blanket rejection.
@@ -45,7 +46,7 @@ All **204 synthetic tests passed**, including a nine-chunk mixed-palette fixture
 - Local portable `.wrbuild` library and transfer files that reopen without the source world, with explicit include/skip air placement.
 - Experimental regeneration export: exact stable Java **26.3 / DataVersion and Version.Id 5023**, namespaced Overworld only. Requires review and acknowledgments, keeps a verified backup, removes selected terrain/entity/POI records only from a new result copy, and checks preservation. Minecraft generates missing terrain when the copy is loaded. The app does not generate terrain or upgrade a save.
 - Restricted copied-world build placement: exact **26.2 / 4903**, supported building blocks, same vanilla dimension and validated surrounding chunks. Entities, inventories/block entities, POI, scheduled updates and other unsupported dependencies block placement. 26.3 archives can be read/previewed but cannot be placed.
-- Optional update checking and verified download staging exist, but the release repository/public keys are **unconfigured**. Publishing a GitHub release does not remotely update installed copies. Automatic installation is not implemented; download and replace test builds manually.
+- Application updates support Stable/Beta checks, startup checks and optional verified downloads from the configured GitHub repository. A downloaded update is applied manually; automatic installation is not implemented. Unpublished local test builds are not offered by the public release feed.
 
 General world merging, terrain blending, farm adaptation, Nether/End regeneration, arbitrary rotation and version upgrades are not implemented. Blocks/files preserved does not mean a farm works or a portal connects. Bedrock and modded worlds are unsupported.
 

@@ -8,10 +8,11 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="transfer.css">
   <link rel="stylesheet" href="simple.css">
+  <link rel="stylesheet" href="template-editor.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.9-test.1</span></div>
+    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.10-test.1</span></div>
     <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="templates-open">Templates</button><button id="open-build-file">Import template…</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
   </header>
   <main>
@@ -43,7 +44,7 @@
       <p class="sidebar-bottom">Open a Java world folder containing <code>level.dat</code>. Close Minecraft while inspecting it.</p>
     </aside>
     <section class="workspace">
-      <div class="page-heading"><div><h1>World map</h1><p>Find terrain and builds, select chunks, then explore the area in 3D.</p></div><div class="page-actions"><button id="rescan" disabled>Refresh</button><button id="toggle-protection" aria-expanded="false" aria-controls="protection-panel">Protection &amp; copies</button><button id="open-transfer" class="primary" disabled>Open 3D preview</button></div></div>
+      <div class="page-heading"><div><h1>World map</h1><p>Find terrain and builds, select chunks, then explore the area in 3D.</p></div><div class="page-actions"><button id="rescan" disabled>Refresh</button><button id="toggle-protection" aria-expanded="false" aria-controls="protection-panel">Protection &amp; copies</button><button id="create-template" disabled>Create template</button><button id="open-transfer" class="primary" disabled>Open 3D preview</button></div></div>
       <div class="stats"><div><span>EXISTING CHUNKS</span><strong id="chunk-count">—</strong></div><div><span>REGION FILES</span><strong id="region-count">—</strong></div><div><span>DIMENSIONS</span><strong id="dimension-count">—</strong></div><div><span>PROTECTED IN PLAN</span><strong id="protected-count">0</strong></div></div>
       <section class="map-card" aria-label="World terrain map">
         <div class="map-toolbar"><div><label for="dimension">Dimension</label><select id="dimension" disabled><option>Open a world first</option></select></div><div class="map-actions"><label for="map-tool">Tool</label><select id="map-tool"><option value="select">Select</option><option value="pan">Pan</option></select><button id="zoom-out" disabled aria-label="Zoom out">−</button><button id="zoom-in" disabled aria-label="Zoom in">+</button><button id="fit" disabled>Fit world</button><button id="fit-selection" disabled>Fit selection</button></div></div>
@@ -113,13 +114,44 @@
   </dialog>
   <dialog id="templates-dialog" aria-labelledby="templates-title">
     <header class="build-header"><div><h2 id="templates-title">Your templates</h2><p>Saved on this device. Copy a .wrbuild file to another Windows PC or Mac, then import it there.</p></div><button id="templates-close" aria-label="Close templates">✕</button></header>
-    <div class="templates-body"><div class="templates-actions"><button id="templates-import" class="primary">Import .wrbuild…</button><button id="templates-folder">Open Templates Folder</button><button id="templates-refresh">Refresh</button></div>
+    <div class="templates-body"><div class="templates-actions"><button id="templates-import" class="primary">Import .wrbuild…</button><button id="templates-folder">Open Templates Folder</button><button id="templates-refresh">Refresh</button><button id="templates-cancel" hidden>Cancel operation</button></div>
       <p id="templates-directory" class="path"></p><div id="templates-drop" tabindex="0">Drop one .wrbuild file here to import a local copy. You can also use Import above.</div>
-      <p>To save a build, open a world, load a complete selection in 3D, and choose Save to local templates. Files contain supporting chunk data, including nearby blocks and entities.</p>
+      <p>To save a build, open a world and choose Create template. Pick corners and height, refine the selected blocks, then save. Files contain supporting chunk data, including nearby blocks and entities.</p>
       <div id="templates-list" aria-label="Local templates"></div><div class="templates-pages"><button id="templates-previous">Previous</button><span id="templates-page"></span><button id="templates-next">Next</button></div>
       <p class="small">Every import and open is validated. Names are made safe for Windows and Mac; duplicates receive a number. Existing files are never overwritten. No account or cloud sync is required.</p>
     </div><footer id="templates-status" role="status" aria-live="polite">Local portable templates.</footer>
   </dialog>
+  <dialog id="template-editor" aria-labelledby="template-editor-title">
+    <header class="build-header"><div><h2 id="template-editor-title">Create a template</h2><p id="template-source-label">Select blocks and air from an actual height slice.</p></div><button id="template-close" aria-label="Close template editor">✕</button></header>
+    <div class="template-editor-body">
+      <section class="template-slice-pane" aria-label="Height slice preview">
+        <div class="template-toolbar"><label>Tool<select id="template-tool"><option value="inspect">Inspect</option><option value="corners">Pick two corners</option><option value="add">Add blocks</option><option value="remove">Remove blocks</option><option value="pan">Pan</option></select></label><button id="template-zoom-out" aria-label="Zoom out">−</button><button id="template-zoom-in" aria-label="Zoom in">+</button><button id="template-center-selection">Go to selection</button></div>
+        <div class="template-toolbar"><label>Center X<input id="template-center-x" type="number" step="1" value="0"></label><label>Z<input id="template-center-z" type="number" step="1" value="0"></label><button id="template-go">Go</button><label>Slice Y<input id="template-slice-y" type="number" step="1" value="64"></label><input id="template-y-range" aria-label="Slice height" type="range" min="-64" max="319" value="64"></div>
+        <canvas id="template-slice" tabindex="0" aria-label="Actual blocks at the chosen height. Arrow keys pan; plus and minus zoom."></canvas>
+        <p id="template-hover" class="small">Point at a cell to inspect its exact block state.</p>
+        <p class="template-legend"><span>▧ Selected air</span><span>▣ Selected block</span><span>□ Excluded</span><span>· Pending</span><span>! Unreadable</span></p>
+        <p id="template-window-note" class="small">This window shows up to 64 × 64 blocks at one exact Y. Selection outside the window is retained.</p>
+      </section>
+      <aside class="template-editor-controls">
+        <section id="template-edit-controls"><label>Source dimension<select id="template-dimension"></select></label>
+          <fieldset><legend>Inclusive corners and height</legend><div class="template-bounds">
+            <label>From X<input id="template-minX" type="number" step="1"></label><label>Lower Y<input id="template-minY" type="number" step="1"></label><label>From Z<input id="template-minZ" type="number" step="1"></label>
+            <label>To X<input id="template-maxX" type="number" step="1"></label><label>Upper Y<input id="template-maxY" type="number" step="1"></label><label>To Z<input id="template-maxZ" type="number" step="1"></label>
+          </div></fieldset><div class="template-toolbar"><button id="template-replace">Replace selection</button><button id="template-add">Add box</button><button id="template-remove">Remove box</button><button id="template-clear">Clear</button></div>
+          <p>Pick corners on different Y slices to include a basement or roof. Add and Remove can refine one cell, a rectangle, or disconnected pieces.</p>
+          <label>Template name<input id="template-name" maxlength="100" value="My build"></label><button id="template-save" class="primary full" disabled>Save to local templates</button>
+          <p class="small">Selection edits are saved on this device after each change. Keep the source world closed while capturing.</p>
+        </section>
+        <p id="template-selection-summary" role="status">No blocks selected.</p><p id="template-saved" class="small"></p><button id="template-export" class="full" disabled>Export .wrbuild…</button>
+        <details id="template-placement"><summary>Place saved template</summary><button id="template-current-destination" class="full" disabled>Use currently open world</button><button id="template-choose-destination" class="full" disabled>Choose destination world…</button><p id="template-destination-label">Save or open a template first.</p><label>Dimension<select id="template-destination-dimension"></select></label>
+          <fieldset><legend>Place minimum corner at</legend><div class="template-bounds"><label>X<input id="template-anchor-x" type="number" step="1" value="0"></label><label>Y<input id="template-anchor-y" type="number" step="1" value="0"></label><label>Z<input id="template-anchor-z" type="number" step="1" value="0"></label></div></fieldset>
+          <label>Selected air<select id="template-air"><option value="skip">Skip air · keep destination blocks</option><option value="include">Include air · clear selected rooms</option></select></label><p class="small">Excluded cells always leave the destination unchanged. Include air only when the selected empty spaces should clear blocks.</p>
+          <button id="template-review" class="full" disabled>Preview placement</button><p id="template-review-summary"></p><ul id="template-findings"></ul><label><input id="template-placement-closed" type="checkbox"> Minecraft and servers using the destination are closed, and I reviewed the changes.</label><button id="template-place" class="primary full" disabled>Create separate test world…</button><p id="template-placement-result"></p>
+        </details>
+      </aside>
+    </div><footer class="template-editor-footer"><span id="template-editor-status" role="status" aria-live="polite">Original world files stay unchanged.</span><button id="template-cancel" hidden>Cancel operation</button></footer>
+  </dialog>
+  <script src="template-editor.js"></script>
   <script src="templates.js"></script>
   <script type="module" src="renderer.js"></script>
   <script src="transfer.js"></script>

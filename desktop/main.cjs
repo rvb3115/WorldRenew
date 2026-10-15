@@ -17,7 +17,7 @@ let textureSource = null, regenerationReview = null, lastRegeneratedCopy = null;
 let destination = null, transfer = null, capturedBuild = null;
 const workers = new Set();
 const { TerrainService } = require('./terrain-service.cjs');
-let terrain = null, terrainSession = 0;
+let terrain = null, terrainSession = 0, templateCancelFlag = null, templateSliceBusy = false;
 const page = path.join(__dirname, '../ui/index.html');
 function runWorker(data) {
   return new Promise((resolve, reject) => {
@@ -31,6 +31,12 @@ function runWorker(data) {
     worker.on('exit', code => { workers.delete(worker); if (!settled) reject(new Error(`Inspection worker stopped (${code}).`)); });
   });
 }
+async function runTemplateWorker(data){
+  const flag=new SharedArrayBuffer(4);templateCancelFlag=flag;
+  try{return await runWorker({...data,cancelFlag:flag});}finally{if(templateCancelFlag===flag)templateCancelFlag=null;}
+}
+function trusted(event){return win&&event.sender===win.webContents&&event.senderFrame===win.webContents.mainFrame&&event.senderFrame.url===pathToFileURL(page).href;}
+function templateWorld(world){return {root:world.root,fingerprint:world.fingerprint,metadata:world.metadata,dimensions:world.dimensions.map(({key,id,path})=>({key,id,path}))};}
 function handle(name, action) {
   ipcMain.handle(name, async (event, ...args) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== pathToFileURL(page).href) return { error: { message: 'Untrusted request.' } };
@@ -64,8 +70,10 @@ app.whenReady().then(async () => {
     catch (error) { return { error: { message: error.message } }; }
   });
   const templates = path.join(app.getPath('userData'), 'templates');
+  const templateSelections=path.join(app.getPath('userData'),'template-selections'),templatePreviews=path.join(app.getPath('userData'),'template-previews');
+  ipcMain.handle('templates:cancel',event=>{if(!trusted(event))return {error:{message:'Untrusted request.'}};if(templateCancelFlag)Atomics.store(new Int32Array(templateCancelFlag),0,1);return {result:Boolean(templateCancelFlag)};});
   const openWorldRoots = () => [current?.root, destination?.root].filter(Boolean);
-  const usePortable = result => { portableBuild = { file: result.file, digest: result.digest }; portableReview = null; return result; };
+  const usePortable = result => { portableBuild = { file: result.file, digest: result.digest, schema:result.schema??1, preview:result.preview }; portableReview = null; return result; };
   const projects = path.join(app.getPath('userData'), 'projects');
   const inspect = async folder => {
     const report = await runWorker({ action: 'inspect', folder });
@@ -145,14 +153,33 @@ app.whenReady().then(async () => {
     const directory = ensureTemplateDirectory(templates, openWorldRoots());
     const error = await shell.openPath(directory); if (error) throw new Error(error); return { directory };
   });
-  const importTemplateFile = async file => runWorker({ action: 'template-import', directory: templates, file, worlds: openWorldRoots() });
+  const importTemplateFile = async file => runTemplateWorker({ action: 'template-import', directory: templates, previewDirectory:templatePreviews, file, worlds: openWorldRoots() });
   const chooseTemplate = async () => {
     const choice = await dialog.showOpenDialog(win, { title: 'Import a portable template to this device', properties: ['openFile'], filters: [{ name: 'WorldRenew template', extensions: ['wrbuild'] }] });
     return choice.canceled ? null : choice.filePaths[0];
   };
   handle('templates:import', async () => { const file = await chooseTemplate(); return file ? importTemplateFile(file) : null; });
   handle('templates:drop', file => importTemplateFile(file));
-  handle('templates:open', async id => usePortable(await runWorker({ action: 'template-open', directory: templates, id })));
+  handle('templates:open', async id => usePortable(await runTemplateWorker({ action: 'template-open', directory: templates, previewDirectory:templatePreviews, id, worlds:openWorldRoots() })));
+  const assertSourceSession=data=>{if(!current||data?.session!==terrainSession)throw new Error('Source world changed. Reopen the template editor.');};
+  handle('template:workspace',async dimension=>{if(!current)throw new Error('Open a source world first.');return {...await runWorker({action:'template-workspace',selectionDirectory:templateSelections,world:templateWorld(current),dimension}),session:terrainSession,worldName:current.metadata.name,worldVersion:current.metadata.version};});
+  handle('template:edit',async data=>{assertSourceSession(data);portableReview=null;return runWorker({action:'template-edit',selectionDirectory:templateSelections,world:templateWorld(current),dimension:data.dimension,edit:data});});
+  handle('template:capture',async data=>{assertSourceSession(data);portableReview=null;return usePortable(await runTemplateWorker({action:'template-capture-sparse',selectionDirectory:templateSelections,directory:templates,previewDirectory:templatePreviews,world:templateWorld(current),dimension:data.dimension,capture:data,worlds:openWorldRoots()}));});
+  ipcMain.handle('template:slice',async(event,data)=>{
+    if(!trusted(event))return {error:{message:'Untrusted request.'}};
+    if(busy||templateSliceBusy||updater?.running)return {error:{code:'TEMPLATE_BUSY',message:'Waiting for the current operation.'}};
+    const session=terrainSession,portable=portableBuild;templateSliceBusy=true;
+    try{
+      let result;
+      if(data?.source==='template'){
+        if(portable?.schema!==2||data.digest!==portable.digest)throw new Error('Open the current template before previewing.');
+        result=await runWorker({action:'template-preview-slice',previewDirectory:templatePreviews,context:portable.preview,request:data});
+        if(portableBuild!==portable)throw new Error('Template changed. Reload its preview.');
+      }else{assertSourceSession(data);result=await runWorker({action:'template-source-slice',selectionDirectory:templateSelections,world:templateWorld(current),dimension:data.dimension,request:data});if(terrainSession!==session)throw new Error('Source world changed. Reload the editor.');}
+      return {result};
+    }catch(error){return {error:{code:error.code??'IO_ERROR',message:error.message}};}finally{templateSliceBusy=false;}
+  });
+  handle('template:destination-current',()=>{if(!current)throw new Error('Open a destination world first.');destination=current;portableReview=null;return destination;});
   handle('templates:save', async name => {
     if (!current || !capturedBuild?.complete) throw new Error('Load a complete selection first.');
     return usePortable(await runWorker({ action: 'template-save', directory: templates, name, world: current, dimension: capturedBuild.dimension, bounds: capturedBuild.bounds, expectedDigest: capturedBuild.digest, worlds: openWorldRoots() }));
@@ -163,7 +190,7 @@ app.whenReady().then(async () => {
     else { if (!portableBuild) throw new Error('Open a template first.'); source = portableBuild.file; }
     const choice = await dialog.showSaveDialog(win, { title: 'Export a template for another device', defaultPath: path.join(app.getPath('downloads'), path.basename(source)), filters: [{ name: 'WorldRenew template', extensions: ['wrbuild'] }] });
     if (choice.canceled) return null;
-    return runWorker({ action: 'template-export', file: source, destination: choice.filePath, worlds: openWorldRoots() });
+    return runTemplateWorker({ action: 'template-export', file: source, destination: choice.filePath, worlds: openWorldRoots() });
   });
   handle('archive:save',async()=>{
     if(!current||!capturedBuild?.complete)throw new Error('Load a complete selection first.');
@@ -176,7 +203,7 @@ app.whenReady().then(async () => {
     const file = await chooseTemplate(); return file ? usePortable(await importTemplateFile(file)) : null;
   });
   handle('archive:preview',async data=>{
-    if(!portableBuild||!destination)throw new Error('Open a portable build and destination first.');portableReview=null;
+    if(!portableBuild||!destination)throw new Error('Open a portable build and destination first.');if(portableBuild.schema===2)throw new Error('Streaming template placement adapter is not connected yet.');portableReview=null;
     const protection=loadProject(projects,destination).protection;
     const result=await runWorker({action:'archive-preview',file:portableBuild.file,destination,destinationDimension:data?.destinationDimension,anchor:data?.anchor,protection,options:{airMode:data?.airMode}});
     if(result.archiveDigest!==portableBuild.digest)throw new Error('Build file changed. Reopen it before reviewing placement.');

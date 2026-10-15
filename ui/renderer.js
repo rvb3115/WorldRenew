@@ -21,7 +21,7 @@ function setBusy(value) {
   $('open-build-file').disabled=$('templates-open').disabled=value;
   $('open').disabled = $('open-empty').disabled = value;
   $('open-transfer').disabled = value || !world;
-  for (const id of ['rescan', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-view', 'topographic-north', 'map-jump', 'fit-selection', 'selection-mode', 'select-all', 'select-range', 'view-scale', 'view-scale-reset']) $(id).disabled = value || !world;
+  for (const id of ['rescan', 'create-template', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-view', 'topographic-north', 'map-jump', 'fit-selection', 'selection-mode', 'select-all', 'select-range', 'view-scale', 'view-scale-reset']) $(id).disabled = value || !world;
   updateSelection();
   if (!value) draw();
 }
@@ -367,3 +367,5 @@ $('toggle-protection').onclick = () => {
   $('toggle-protection').setAttribute('aria-expanded', String(!open));
   document.body.classList.toggle('show-protection', !open);
 };
+
+$('create-template').onclick=()=>window.openTemplateEditor({world,dimension:dimension?.key,area:selectionBounds?{minX:selectionBounds.minX*16,maxX:selectionBounds.maxX*16+15,minZ:selectionBounds.minZ*16,maxZ:selectionBounds.maxZ*16+15}:null});

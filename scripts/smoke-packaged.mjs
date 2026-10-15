@@ -37,7 +37,7 @@ if (process.platform === 'darwin') {
   assert.equal(architecture.status, 0); assert.equal(architecture.stdout.trim(), 'arm64');
 } else executable = path.join(root, 'dist/WorldRenew-win32-x64/WorldRenew.exe');
 // Existing full workflows run on the extracted macOS bundle / Windows packaged app.
-for (const script of ['scripts/smoke-desktop.mjs', 'scripts/smoke-transfer.mjs', 'scripts/smoke-archive.mjs', 'scripts/smoke-terrain.mjs', 'scripts/smoke-templates.mjs']) run(process.execPath, [script], { WORLDRENEW_EXECUTABLE: executable });
+for (const script of ['scripts/smoke-desktop.mjs', 'scripts/smoke-transfer.mjs', 'scripts/smoke-archive.mjs', 'scripts/smoke-terrain.mjs', 'scripts/smoke-templates.mjs', 'scripts/smoke-template-editor.mjs']) run(process.execPath, [script], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-terrain.mjs', '--legacy-1.21.11'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-topographic.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-preservation.mjs'], { WORLDRENEW_EXECUTABLE: executable });
