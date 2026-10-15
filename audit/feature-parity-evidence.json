@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-10-15T02:10:51.661Z",
+  "commit": "9f8795777b982288c3881d1cf31eefb58a496065",
+  "macArtifactSha256": "4c58cdf7538a9c69aeabce21aac249d4b7d2ee591002daaefa2e84a235fca38a",
+  "windowsArtifactSha256": "a0648887231d8824455e9ef50172fa6ee01ccd4c9169060c3cdf58767fe35242",
+  "macAsarSha256": "7b71f3c294a39f8e0aac2bed661e4e1f879d2b04207de0cb7babe66266ccabc0",
+  "windowsAsarSha256": "7b71f3c294a39f8e0aac2bed661e4e1f879d2b04207de0cb7babe66266ccabc0",
+  "macFiles": 1340,
+  "windowsFiles": 1340,
+  "differences": [],
+  "windowsExecutionTested": false
+}

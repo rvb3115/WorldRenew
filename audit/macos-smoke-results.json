@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "target": "macos-arm64",
+  "version": "0.5.3",
+  "artifact": "WorldRenew-0.5.3-macos-arm64.app.zip",
+  "sha256": "4c58cdf7538a9c69aeabce21aac249d4b7d2ee591002daaefa2e84a235fca38a",
+  "checkedAt": "2026-10-15T02:08:45.607Z",
+  "checks": [
+    "artifact SHA-256",
+    "packaged desktop/preservation/export",
+    "3D transfer and Nether roof preview",
+    "build archive and isolated-copy workflow",
+    "distributed ZIP extracts with valid ad-hoc seal, arm64 binary, executable modes and working bundle"
+  ],
+  "originalWorldsUsed": false,
+  "gameLoadTested": false
+}
