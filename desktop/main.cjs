@@ -12,6 +12,8 @@ let portableBuild=null,portableReview=null,lastPlacedCopy=null;
 let textureSource = null, regenerationReview = null, lastRegeneratedCopy = null;
 let destination = null, transfer = null, capturedBuild = null;
 const workers = new Set();
+const { TerrainService } = require('./terrain-service.cjs');
+let terrain = null, terrainSession = 0;
 const page = path.join(__dirname, '../ui/index.html');
 function runWorker(data) {
   return new Promise((resolve, reject) => {
@@ -63,8 +65,16 @@ app.whenReady().then(async () => {
     let project;
     try { project = loadProject(projects, report); }
     catch (error) { project = { protection: [], warnings: [`Project could not be loaded: ${error.message}`] }; }
-    current = report; regenerationReview = null; transfer = null; capturedBuild = null; portableBuild=null;portableReview=null; return { report, project, projectDirectory: projects };
+    terrain?.dispose(); terrain = new TerrainService(report); terrainSession++;
+    current = report; regenerationReview = null; transfer = null; capturedBuild = null; portableBuild=null;portableReview=null; return { report, project, projectDirectory: projects, terrainSession };
   };
+  ipcMain.handle('terrain:tiles', async (event, request) => {
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== pathToFileURL(page).href) return { error: { message: 'Untrusted request.' } };
+    if (!terrain || request?.session !== terrainSession) return { error: { code: 'TERRAIN_SESSION', message: 'World changed. Refresh the terrain view.' } };
+    if (busy || updater?.running) return { error: { code: 'TERRAIN_BUSY', message: 'World operation in progress.' } };
+    try { return { result: await terrain.load(request) }; }
+    catch (error) { return { error: { code: error.code || 'IO_ERROR', message: error.message } }; }
+  });
   handle('textures:choose', async () => {
     const choice=await dialog.showOpenDialog(win,{title:'Choose a Minecraft client JAR or resource-pack ZIP',properties:['openFile'],filters:[{name:'Minecraft textures',extensions:['jar','zip']}]});
     if(choice.canceled)return null;const archive=new AssetArchive(choice.filePaths[0]);archive.close();textureSource={file:choice.filePaths[0],label:path.basename(choice.filePaths[0])};return {label:textureSource.label};
@@ -204,7 +214,8 @@ app.whenReady().then(async () => {
   startupCheck.unref();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { terrain?.dispose(); if (process.platform !== 'darwin') app.quit(); });
+app.on('will-quit', () => terrain?.dispose());
 app.on('before-quit', event => {
   if (busy) { event.preventDefault(); dialog.showMessageBoxSync(win, { type: 'info', message: 'Wait for the current operation to finish before quitting.', buttons: ['Keep open'] }); }
 });

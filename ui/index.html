@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.3 preview</span></div>
+    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.5-test.1</span></div>
     <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="open-build-file">Open build file</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
   </header>
   <main>
@@ -43,18 +43,21 @@
       <p class="sidebar-bottom">Open a Java world folder containing <code>level.dat</code>. Close Minecraft while inspecting it.</p>
     </aside>
     <section class="workspace">
-      <div class="page-heading"><div><h1>World map</h1><p>Select a small area to explore its blocks in 3D.</p></div><div class="page-actions"><button id="rescan" disabled>Refresh</button><button id="toggle-protection" aria-expanded="false" aria-controls="protection-panel">Protection &amp; copies</button><button id="open-transfer" class="primary" disabled>Open 3D preview</button></div></div>
+      <div class="page-heading"><div><h1>World map</h1><p>Find terrain and builds, select chunks, then explore the area in 3D.</p></div><div class="page-actions"><button id="rescan" disabled>Refresh</button><button id="toggle-protection" aria-expanded="false" aria-controls="protection-panel">Protection &amp; copies</button><button id="open-transfer" class="primary" disabled>Open 3D preview</button></div></div>
       <div class="stats"><div><span>EXISTING CHUNKS</span><strong id="chunk-count">—</strong></div><div><span>REGION FILES</span><strong id="region-count">—</strong></div><div><span>DIMENSIONS</span><strong id="dimension-count">—</strong></div><div><span>PROTECTED IN PLAN</span><strong id="protected-count">0</strong></div></div>
-      <section class="map-card" aria-label="World chunk map">
-        <div class="map-toolbar"><div><label for="dimension">Dimension</label><select id="dimension" disabled><option>Open a world first</option></select></div><div class="map-actions"><button id="zoom-out" disabled aria-label="Zoom out">−</button><button id="zoom-in" disabled aria-label="Zoom in">+</button><button id="fit" disabled>Fit world</button></div></div>
+      <section class="map-card" aria-label="World terrain map">
+        <div class="map-toolbar"><div><label for="dimension">Dimension</label><select id="dimension" disabled><option>Open a world first</option></select></div><div class="map-actions"><label for="map-tool">Tool</label><select id="map-tool"><option value="select">Select</option><option value="pan">Pan</option></select><button id="zoom-out" disabled aria-label="Zoom out">−</button><button id="zoom-in" disabled aria-label="Zoom in">+</button><button id="fit" disabled>Fit world</button><button id="fit-selection" disabled>Fit selection</button></div></div>
+        <div class="terrain-controls"><label>Terrain <select id="terrain-mode" disabled><option value="surface">Top surface</option></select></label><label id="terrain-y-label" hidden>Y <input id="terrain-y" type="number" step="1" value="80"></label><div class="map-jump-fields"><label>Block X <input id="map-x" type="number" step="1" value="0"></label><label>Z <input id="map-z" type="number" step="1" value="0"></label><button id="map-jump" disabled>Go</button></div></div>
+        <p id="terrain-note">Approximate surface colors and elevation shading. Chunk boundaries appear as you zoom in.</p>
         <div id="map-container">
-          <canvas id="map" tabindex="0" aria-label="Existing chunks. Drag to select. Shift-drag to pan. Use the coordinate inputs for keyboard selection."></canvas>
+          <canvas id="map" tabindex="0" aria-label="Terrain map. North is up. Drag to select chunks. Shift or right drag to pan; scroll or plus and minus to zoom. Arrow keys pan. Use Go to block coordinates and the protection panel for keyboard selection."></canvas>
           <div id="empty-state"><h2>Open a Minecraft world</h2><p>Choose a save folder to see its map<br>and select a build to preview.</p><button id="open-empty" class="primary">Choose a world folder</button><small>No mods. No uploads. No changes to your save.</small></div>
           <div id="map-empty" hidden>No saved terrain chunks in this dimension.</div>
         </div>
-        <div class="map-footer"><div class="legend"><span><i class="existing"></i> Existing</span><span><i class="protected"></i> Protected</span><span><i class="selected"></i> Selected</span><span><i class="invalid"></i> Invalid</span><span id="regeneration-legend" hidden><i class="candidate"></i> Candidate · green kept</span></div><span id="coordinates">CHUNK GRID · 16 × 16 BLOCKS</span></div>
+        <div class="map-footer"><div class="legend"><span><i class="pending"></i> Pending</span><span><i class="absent"></i> Absent</span><span><i class="protected"></i> Protected</span><span><i class="selected"></i> Selected</span><span><i class="invalid"></i> Unreadable</span><span><i class="unsupported"></i> Unsupported</span><span id="regeneration-legend" hidden><i class="candidate"></i> Candidate · green kept</span></div><span id="coordinates">CHUNK GRID · 16 × 16 BLOCKS</span></div>
+        <div id="terrain-status" role="status" aria-live="polite">Surface colors load from your world. No uploads.</div><div id="terrain-hover">Point at terrain to inspect its block and surface height.</div>
       </section>
-      <div class="under-map"><span>Drag to select · Shift-drag to pan · Scroll to zoom</span><span id="map-selection-summary">Select an area for 3D preview</span></div>
+      <div class="under-map"><span>Drag to select · Right/Shift-drag to pan · Scroll to zoom</span><span id="map-selection-summary">Select an area for 3D preview</span></div>
       <details class="validation"><summary>Inspection notes <span id="issue-count">0</span></summary><ul id="issues"><li>Open a world to see validation results.</li></ul></details>
     </section>
     <aside class="inspector" id="protection-panel" hidden>
@@ -103,7 +106,7 @@
     </div>
     <footer id="build-status" role="status" aria-live="polite">Read-only build planning. Neither world is modified.</footer>
   </dialog>
-  <script src="renderer.js"></script>
+  <script type="module" src="renderer.js"></script>
   <script src="transfer.js"></script>
   <script src="updates.js"></script>
 </body>

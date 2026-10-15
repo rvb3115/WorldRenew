@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('worldrenew', Object.freeze({
   createPlacedCopy: data => ipcRenderer.invoke('archive:place',data),
   chooseTextures: () => ipcRenderer.invoke('textures:choose'),
   loadTextures: palette => ipcRenderer.invoke('textures:load', palette),
+  terrainTiles: request => ipcRenderer.invoke('terrain:tiles', request),
   openWorld: () => ipcRenderer.invoke('world:open'),
   rescan: () => ipcRenderer.invoke('world:rescan'),
   saveProtection: protection => ipcRenderer.invoke('project:save', protection),

@@ -4,6 +4,7 @@
   let latest, running = false;
   function render(s) {
     latest = s;
+    document.querySelector('.version').textContent = s.currentVersion;
     get('updates-panel').querySelector('summary').textContent = s.release ? 'Application updates · Available' : 'Application updates';
     get('update-version').textContent = `Installed: ${s.currentVersion}`;
     get('update-auto-check').checked = s.settings.automaticChecks;

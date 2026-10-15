@@ -48,7 +48,7 @@ export function inspectWorld(folder, progress = () => {}) {
   let regionTotal = 0, chunkTotal = 0, directoryTotal = 0;
   function addDimension(id, relative, layout) {
     const key = `${id}|${relative}`; if (seen.has(key)) return; seen.add(key);
-    const dim = { key, id, path: relative || '.', layout, regions: [], stores: { region: 0, entities: 0, poi: 0 }, chunkCount: 0, invalidChunks: 0, emptyRegionFiles: 0, issues: [] };
+    const dim = { key, id, path: relative || '.', layout, regions: [], unreadableRegions: [], stores: { region: 0, entities: 0, poi: 0 }, chunkCount: 0, invalidChunks: 0, emptyRegionFiles: 0, issues: [] };
     for (const store of ['region', 'entities', 'poi']) {
       const storePath = path.join(relative, store); let entries;
       try { entries = fs.readdirSync(safePath(root, storePath), { withFileTypes: true }); }
@@ -68,7 +68,7 @@ export function inspectWorld(folder, progress = () => {}) {
             dim.regions.push(region); dim.chunkCount += region.present; dim.invalidChunks += region.invalid; chunkTotal += region.present;
             requireThat(chunkTotal <= 1000000, 'SCAN_LIMIT', 'World exceeds the v0.1 limit of 1,000,000 terrain chunks.');
           } else for (const issue of region.issues) dim.issues.push(`${file}: ${issue}`);
-        } catch (error) { if (error.code === 'SCAN_LIMIT') throw error; dim.issues.push(`${file}: ${error.message}`); }
+        } catch (error) { if (error.code === 'SCAN_LIMIT') throw error; dim.issues.push(`${file}: ${error.message}`); if (store === 'region') { const match = REGION_NAME.exec(entry.name); dim.unreadableRegions.push({ rx: Number(match[1]), rz: Number(match[2]), message: error.message }); } }
       }
     }
     dimensions.push(dim);

@@ -1,9 +1,13 @@
+import { TerrainMap } from './terrain-map.js';
+import { terrainHeights } from '../engine/terrain-policy.js';
 /* Renderer has no filesystem access. The narrow preload bridge owns all requests. */
 const $ = id => document.getElementById(id), api = window.worldrenew;
 let world = null, dimension = null, chunks = [], protectedChunks = new Map(), selection = new Set(), dirty = false, busy = false;
 let regenerationReview = null, regenerationMarks = new Map();
+let terrainSession = null;
 let view = { x: 0, z: 0, scale: 8 }, gesture = null;
 const canvas = $('map'), ctx = canvas.getContext('2d');
+const terrain = new TerrainMap(api, () => draw());
 const key = (x, z) => `${x},${z}`;
 const protectionKey = (dimension, x, z) => `${dimension}:${x},${z}`;
 const fmt = value => value.toLocaleString();
@@ -13,8 +17,9 @@ function setBusy(value) {
   $('open-build-file').disabled=value;
   $('open').disabled = $('open-empty').disabled = value;
   $('open-transfer').disabled = value || !world;
-  for (const id of ['rescan', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save']) $(id).disabled = value || !world;
+  for (const id of ['rescan', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-jump', 'fit-selection']) $(id).disabled = value || !world;
   updateSelection();
+  if (!value) draw();
 }
 async function call(action, loading) {
   setBusy(true); status(loading);
@@ -24,6 +29,7 @@ async function call(action, loading) {
 }
 function addDetail(name, value) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = name; dd.textContent = value ?? 'Unavailable'; $('metadata').append(dt, dd); }
 function load(value) {
+  terrainSession = value.terrainSession;
   world = value.report; protectedChunks = new Map(value.project.protection.map(c => [protectionKey(c.dimension, c.x, c.z), c])); dirty = false;
   $('world-name').textContent = world.metadata.name; $('world-path').textContent = world.root; $('world-path').title = world.root;
   $('metadata').replaceChildren();
@@ -77,12 +83,37 @@ function changeDimension() {
   invalidateRegeneration();
   dimension = world?.dimensions.find(d => d.key === $('dimension').value) ?? null;
   chunks = dimension ? dimension.regions.flatMap(r => r.chunks) : []; selection.clear();
-  $('map-empty').hidden = chunks.length > 0 || !world; $('preview-result').textContent = 'Preview the chunks to remove from a separate copy.';
-  fit(); updateSelection();
+  $('map-empty').hidden = chunks.length > 0 || dimension?.unreadableRegions?.length > 0 || !world; $('preview-result').textContent = 'Preview the chunks to remove from a separate copy.';
+  configureTerrain(); fit(); updateSelection();
 }
+function configureTerrain() {
+  const nether = dimension?.id === 'minecraft:the_nether', select = $('terrain-mode');
+  select.replaceChildren();
+  const modes = nether ? [['caverns', 'Cavern floors'], ['roof', 'Above roof · Y 128–255'], ['surface', 'Top surface (includes roof)'], ['cutaway', 'Below chosen Y']] : [['surface', 'Top surface'], ['cutaway', 'Below chosen Y']];
+  for (const [value, label] of modes) { const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option); }
+  const heights = terrainHeights[dimension?.id];
+  $('terrain-y').min = heights?.minY ?? 0; $('terrain-y').max = heights?.maxY ?? 255; $('terrain-y').value = nether ? 64 : 80;
+  resetTerrain();
+}
+function resetTerrain() {
+  $('terrain-y-label').hidden = $('terrain-mode').value !== 'cutaway';
+  terrain.reset(world, dimension, terrainSession, $('terrain-mode').value, Number($('terrain-y').value));
+  $('terrain-note').textContent = $('terrain-mode').value === 'caverns'
+    ? 'Nether cavern floors: highest surface below Y 128 with at least 3 air blocks above it. Smaller tunnels and covered floors can be hidden.'
+    : $('terrain-mode').value === 'roof' ? 'Only Y 128–255. The bedrock roof and everything below it are excluded.'
+    : $('terrain-mode').value === 'cutaway' ? 'Highest non-air block at or below the chosen Y. This is a cutaway projection, not a walkable-floor map.'
+    : 'Top non-air blocks, including foliage and structures. Approximate material colors and elevation shading; vanilla heights only.';
+  draw();
+}
+$('terrain-mode').onchange = resetTerrain;
+$('terrain-y').onchange = () => {
+  if (!$('terrain-y').checkValidity()) { status('Choose a whole height inside this dimension.', true); return; }
+  resetTerrain();
+};
 $('dimension').onchange = changeDimension;
 function updateSelection() {
   $('map-selection-summary').textContent = selection.size ? `${fmt(selection.size)} chunks selected for 3D preview` : 'Select an area for 3D preview';
+  $('fit-selection').disabled = busy || !selection.size;
   $('selection-count').textContent = fmt(selection.size); $('protected-count').textContent = fmt(protectedChunks.size);
   for (const id of ['protect', 'unprotect', 'clear-selection', 'preview']) $(id).disabled = busy || selection.size === 0;
   $('copy').disabled = busy || !world || !$('closed').checked;
@@ -95,11 +126,12 @@ function updateSelection() {
 }
 function fit() {
   const width = canvas.clientWidth, height = canvas.clientHeight;
-  if (!chunks.length) view = { x: 0, z: 0, scale: 16 };
+  const extent = [...chunks, ...(dimension?.unreadableRegions ?? []).flatMap(r => [{ x: r.rx * 32, z: r.rz * 32 }, { x: r.rx * 32 + 31, z: r.rz * 32 + 31 }])];
+  if (!extent.length) view = { x: 0, z: 0, scale: 16 };
   else {
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-    for (const c of chunks) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); minZ = Math.min(minZ, c.z); maxZ = Math.max(maxZ, c.z); }
-    const scale = Math.max(0.000001, Math.min(28, (width - 70) / (maxX - minX + 1), (height - 70) / (maxZ - minZ + 1)));
+    for (const c of extent) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); minZ = Math.min(minZ, c.z); maxZ = Math.max(maxZ, c.z); }
+    const scale = Math.max(0.000001, Math.min(128, (width - 70) / (maxX - minX + 1), (height - 70) / (maxZ - minZ + 1)));
     view = { scale, x: (minX + maxX + 1) / 2 - width / scale / 2, z: (minZ + maxZ + 1) / 2 - height / scale / 2 };
   }
   draw();
@@ -108,19 +140,32 @@ function draw() {
   const ratio = window.devicePixelRatio || 1, width = canvas.clientWidth, height = canvas.clientHeight;
   if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) { canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio); }
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.fillStyle = '#101b1f'; ctx.fillRect(0, 0, width, height);
-  let step = view.scale >= 7 ? 1 : 32;
-  while (step * view.scale < 20 && step !== 1) step *= 4;
-  ctx.strokeStyle = '#203035'; ctx.lineWidth = 0.5; ctx.beginPath();
+  terrain.paint(ctx, view, width, height);
+  let step = view.scale >= 12 ? 1 : 32;
+  while (step * view.scale < 50 && step !== 1) step *= 4;
+  ctx.strokeStyle = view.scale >= 12 ? '#0b152d88' : '#7e92932a'; ctx.lineWidth = .7; ctx.beginPath();
   for (let x = Math.ceil(view.x / step) * step; x < view.x + width / view.scale; x += step) { const screen = (x - view.x) * view.scale; ctx.moveTo(screen, 0); ctx.lineTo(screen, height); }
   for (let z = Math.ceil(view.z / step) * step; z < view.z + height / view.scale; z += step) { const screen = (z - view.z) * view.scale; ctx.moveTo(0, screen); ctx.lineTo(width, screen); } ctx.stroke();
-  const gap = view.scale >= 5 ? Math.min(1.5, view.scale * .13) : 0;
-  for (const c of chunks) {
-    const x = (c.x - view.x) * view.scale, y = (c.z - view.z) * view.scale;
-    if (x + view.scale < 0 || y + view.scale < 0 || x > width || y > height) continue;
-    ctx.fillStyle = !c.valid ? '#d98377' : protectedChunks.has(protectionKey(dimension.key, c.x, c.z)) ? '#b9e6a1' : '#3b7872';
-    ctx.fillRect(x + gap / 2, y + gap / 2, Math.max(1, view.scale - gap), Math.max(1, view.scale - gap));
-    if (selection.has(key(c.x, c.z))) { ctx.fillStyle = regenerationMarks.get(protectionKey(dimension.key, c.x, c.z)) ?? '#70bdff'; ctx.globalAlpha = .72; ctx.fillRect(x, y, Math.max(1, view.scale), Math.max(1, view.scale)); ctx.globalAlpha = 1; }
+  // Outlines and light tint retain the recognizable terrain beneath selections.
+  for (const c of protectedChunks.values()) if (c.dimension === dimension?.key) mark(c.x, c.z, '#b9e6a1', false);
+  for (const k of selection) { const [x, z] = k.split(',').map(Number); mark(x, z, regenerationMarks.get(protectionKey(dimension.key, x, z)) ?? '#81caff', true); }
+  function mark(cx, cz, color, selected) {
+    const x = (cx - view.x) * view.scale, z = (cz - view.z) * view.scale;
+    if (x + view.scale < 0 || z + view.scale < 0 || x > width || z > height) return;
+    ctx.fillStyle = color; ctx.globalAlpha = selected ? .16 : .06; ctx.fillRect(x, z, view.scale, view.scale); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#0a131c'; ctx.lineWidth = selected ? 4 : 3; ctx.strokeRect(x + 1, z + 1, Math.max(1, view.scale - 2), Math.max(1, view.scale - 2));
+    ctx.strokeStyle = color; ctx.lineWidth = selected ? 2.5 : 1.5; ctx.strokeRect(x + 1, z + 1, Math.max(1, view.scale - 2), Math.max(1, view.scale - 2));
+    if (view.scale >= 48) { ctx.fillStyle = color; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(selected ? '✓' : '◇', x + 5, z + 14); }
   }
+  ctx.textAlign = 'left'; ctx.font = '11px ui-monospace, monospace';
+  const labelStep = Math.max(1, 2 ** Math.ceil(Math.log2(90 / view.scale)));
+  for (let x = Math.ceil(view.x / labelStep) * labelStep; x < view.x + width / view.scale; x += labelStep) {
+    const sx = (x - view.x) * view.scale; ctx.fillStyle = '#101b1fe8'; ctx.fillRect(sx + 2, 1, 70, 17); ctx.fillStyle = '#c5d8dc'; ctx.fillText(`X ${x * 16}`, sx + 5, 13);
+  }
+  for (let z = Math.ceil(view.z / labelStep) * labelStep; z < view.z + height / view.scale; z += labelStep) {
+    const sz = (z - view.z) * view.scale; if (sz < 22) continue; ctx.fillStyle = '#101b1fe8'; ctx.fillRect(1, sz, 72, 17); ctx.fillStyle = '#c5d8dc'; ctx.fillText(`Z ${z * 16}`, 5, sz + 13);
+  }
+  ctx.fillStyle = '#101b1fe8'; ctx.fillRect(width - 115, height - 27, 110, 22); ctx.fillStyle = '#d4e5e9'; ctx.fillText(`↑ N · 16 blocks`, width - 109, height - 12);
   if (gesture && !gesture.pan) {
     const a = gesture.start, b = gesture.current; ctx.fillStyle = '#7fc5ff25'; ctx.strokeStyle = '#8bcaff'; ctx.lineWidth = 1;
     ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
@@ -137,13 +182,15 @@ function selectArea(a, b) {
   updateSelection(); draw(); status(`${fmt(selection.size)} existing chunks selected.`);
 }
 canvas.onpointerdown = event => {
-  if (!dimension || busy || event.button !== 0) return;
+  if (!dimension || busy || ![0, 1, 2].includes(event.button)) return;
   canvas.setPointerCapture(event.pointerId); const p = point(event);
-  gesture = { start: p, current: p, original: { ...view }, pan: event.shiftKey }; canvas.focus();
+  gesture = { start: p, current: p, original: { ...view }, pan: event.shiftKey || event.button !== 0 || $('map-tool').value === 'pan' }; canvas.focus();
 };
 canvas.onpointermove = event => {
   const p = point(event), c = worldPoint(p);
-  $('coordinates').textContent = `CHUNK ${c.x}, ${c.z} · BLOCK ${c.x * 16}, ${c.z * 16}`;
+  const bx = Math.floor((view.x + p.x / view.scale) * 16), bz = Math.floor((view.z + p.y / view.scale) * 16);
+  $('coordinates').textContent = `CHUNK ${c.x}, ${c.z} · BLOCK ${bx}, ${bz}`;
+  $('terrain-hover').textContent = terrain.describePoint(bx, bz);
   if (gesture) {
     gesture.current = p;
     if (gesture.pan) { view.x = gesture.original.x - (p.x - gesture.start.x) / view.scale; view.z = gesture.original.z - (p.y - gesture.start.y) / view.scale; }
@@ -154,10 +201,11 @@ canvas.onpointerup = event => {
   if (!gesture) return; if (!gesture.pan) selectArea(worldPoint(gesture.start), worldPoint(point(event)));
   gesture = null; draw();
 };
+canvas.oncontextmenu = event => event.preventDefault();
 canvas.onpointercancel = () => { gesture = null; draw(); };
 function zoom(factor, p = { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 }) {
   if (!world || busy) return;
-  const scale = Math.max(.000001, Math.min(64, view.scale * factor));
+  const scale = Math.max(.000001, Math.min(512, view.scale * factor));
   view.x += p.x / view.scale - p.x / scale; view.z += p.y / view.scale - p.y / scale; view.scale = scale; draw();
 }
 canvas.addEventListener('wheel', event => { if (!world || busy) return; event.preventDefault(); zoom(event.deltaY < 0 ? 1.18 : 1 / 1.18, point(event)); }, { passive: false });
@@ -168,6 +216,19 @@ canvas.onkeydown = event => {
   if (event.key === '+' || event.key === '=') zoom(1.3); if (event.key === '-') zoom(1 / 1.3);
 };
 $('zoom-in').onclick = () => zoom(1.5); $('zoom-out').onclick = () => zoom(1 / 1.5); $('fit').onclick = fit;
+$('fit-selection').onclick = () => {
+  if (!selection.size) return;
+  const chosen = selectedChunks();
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  for (const c of chosen) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); minZ = Math.min(minZ, c.z); maxZ = Math.max(maxZ, c.z); }
+  view.scale = Math.min(256, (canvas.clientWidth - 60) / (maxX - minX + 1), (canvas.clientHeight - 60) / (maxZ - minZ + 1));
+  view.x = (minX + maxX + 1) / 2 - canvas.clientWidth / view.scale / 2; view.z = (minZ + maxZ + 1) / 2 - canvas.clientHeight / view.scale / 2; draw();
+};
+$('map-jump').onclick = () => {
+  const x = Number($('map-x').value), z = Number($('map-z').value);
+  if (![$('map-x').value.trim(), $('map-z').value.trim()].every(Boolean) || ![x, z].every(n => Number.isInteger(n) && Math.abs(n) <= 30000000)) { status('Enter whole block coordinates within ±30,000,000.', true); return; }
+  view.scale = Math.max(32, view.scale); view.x = x / 16 - canvas.clientWidth / view.scale / 2; view.z = z / 16 - canvas.clientHeight / view.scale / 2; draw();
+};
 $('select-area').onclick = () => {
   const values = ['x1', 'z1', 'x2', 'z2'].map(id => $(id).value.trim() === '' ? NaN : Number($(id).value));
   if (!values.every(Number.isSafeInteger)) { status('Enter whole, safe integer chunk coordinates.', true); return; }
