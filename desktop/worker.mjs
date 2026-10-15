@@ -1,5 +1,6 @@
 import {templateWorkspace,editTemplateSelection,sourceTemplateSlice,captureWorkspaceTemplate} from '../engine/template-workspace.js';
 import {templateSchema,openTemplatePreview,templatePreviewSlice} from '../engine/template-preview.js';
+import {previewTemplatePlacement,createTemplatePlacedCopy} from '../engine/template-placement.js';
 import {importTemplateStream,exportTemplateStream,listTemplatesStream} from '../engine/template-stream-library.js';
 import { importTemplate, saveTemplate, openTemplate, exportTemplate, listTemplates } from '../engine/template-library.js';
 import { createRegenerationReview, saveRegenerationReview } from '../engine/regeneration.js';
@@ -27,6 +28,8 @@ try {
     case 'template-edit': result=editTemplateSelection(workerData.selectionDirectory,workerData.world,workerData.dimension,workerData.edit);break;
     case 'template-source-slice': result=sourceTemplateSlice(workerData.selectionDirectory,workerData.world,workerData.dimension,workerData.request,templateOptions);break;
     case 'template-preview-slice': result=templatePreviewSlice(workerData.previewDirectory,workerData.context,workerData.request,templateOptions);break;
+    case 'template-placement-preview': result=previewTemplatePlacement(workerData.file,workerData.destination,workerData.destinationDimension,workerData.anchor,{...workerData.options,...templateOptions});break;
+    case 'template-placement-copy': result=createTemplatePlacedCopy(workerData.file,workerData.destination,workerData.destinationDimension,workerData.anchor,workerData.parent,{...workerData.options,...templateOptions});break;
     case 'template-capture-sparse': {const saved=captureWorkspaceTemplate(workerData.selectionDirectory,workerData.directory,workerData.world,workerData.dimension,workerData.capture,templateOptions);result=openPortable(saved.file,saved.id);break;}
     case 'template-save': result = saveTemplate(workerData.directory, workerData.name, captureBuildArchive(workerData.world, workerData.dimension, workerData.bounds, progress, workerData.expectedDigest), workerData.worlds); break;
     case 'archive-save': result=saveBuildFile(workerData.file,captureBuildArchive(workerData.world,workerData.dimension,workerData.bounds,progress,workerData.expectedDigest),workerData.worlds);break;

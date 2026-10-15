@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('worldrenew', Object.freeze({
   templateSlice:data=>ipcRenderer.invoke('template:slice',data),
   captureTemplate:data=>ipcRenderer.invoke('template:capture',data),
   useCurrentTemplateDestination:()=>ipcRenderer.invoke('template:destination-current'),
+  previewStreamingTemplate:data=>ipcRenderer.invoke('template:placement-preview',data),
+  placeStreamingTemplate:data=>ipcRenderer.invoke('template:placement-copy',data),
   terrainTiles: request => ipcRenderer.invoke('terrain:tiles', request),
   openWorld: () => ipcRenderer.invoke('world:open'),
   rescan: () => ipcRenderer.invoke('world:rescan'),

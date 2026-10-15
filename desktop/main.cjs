@@ -180,6 +180,19 @@ app.whenReady().then(async () => {
     }catch(error){return {error:{code:error.code??'IO_ERROR',message:error.message}};}finally{templateSliceBusy=false;}
   });
   handle('template:destination-current',()=>{if(!current)throw new Error('Open a destination world first.');destination=current;portableReview=null;return destination;});
+  handle('template:placement-preview',async data=>{
+    if(portableBuild?.schema!==2||!destination||data?.digest!==portableBuild.digest)throw new Error('Open the saved template and choose a destination first.');portableReview=null;
+    const protection=loadProject(projects,destination).protection;
+    const result=await runTemplateWorker({action:'template-placement-preview',file:portableBuild.file,destination:templateWorld(destination),destinationDimension:data.dimension,anchor:data.anchor,worlds:openWorldRoots(),options:{airMode:data.airMode,protection}});
+    if(result.copyEligible){if(result.archiveDigest!==portableBuild.digest)throw new Error('Template changed. Reopen it before reviewing placement.');portableReview={schema:2,dimension:data.dimension,anchor:data.anchor,airMode:result.airMode,reviewDigest:result.reviewDigest};}return result;
+  });
+  handle('template:placement-copy',async data=>{
+    if(portableBuild?.schema!==2||portableReview?.schema!==2||!destination||data?.reviewDigest!==portableReview.reviewDigest)throw new Error('Review an eligible streaming template placement first.');
+    if(data.confirmedClosed!==true)throw new Error('Confirm Minecraft and servers using the destination are closed.');
+    const choice=await dialog.showOpenDialog(win,{title:'Choose a folder for the verified backup and separate test world',properties:['openDirectory','createDirectory']});if(choice.canceled)return null;
+    const protection=loadProject(projects,destination).protection;
+    const result=await runTemplateWorker({action:'template-placement-copy',file:portableBuild.file,destination:templateWorld(destination),destinationDimension:portableReview.dimension,anchor:portableReview.anchor,parent:choice.filePaths[0],worlds:openWorldRoots(),options:{confirmedClosed:true,reviewDigest:portableReview.reviewDigest,protection,airMode:portableReview.airMode}});portableReview=null;lastPlacedCopy=result;return result;
+  });
   handle('templates:save', async name => {
     if (!current || !capturedBuild?.complete) throw new Error('Load a complete selection first.');
     return usePortable(await runWorker({ action: 'template-save', directory: templates, name, world: current, dimension: capturedBuild.dimension, bounds: capturedBuild.bounds, expectedDigest: capturedBuild.digest, worlds: openWorldRoots() }));
@@ -210,7 +223,7 @@ app.whenReady().then(async () => {
     if(result.copyEligible)portableReview={dimension:data.destinationDimension,anchor:data.anchor,airMode:result.airMode,reviewDigest:result.reviewDigest};return result;
   });
   handle('archive:place',async data=>{
-    if(!portableBuild||!portableReview||!destination||data?.reviewDigest!==portableReview.reviewDigest)throw new Error('Review an eligible placement first.');
+    if(!portableBuild||portableBuild.schema===2||!portableReview||!destination||data?.reviewDigest!==portableReview.reviewDigest)throw new Error('Review an eligible legacy placement first.');
     if(data.confirmedClosed!==true)throw new Error('Confirm Minecraft and servers are closed.');
     const choice=await dialog.showOpenDialog(win,{title:'Choose a folder for the backup and separate test world',properties:['openDirectory','createDirectory']});if(choice.canceled)return null;
     const protection=loadProject(projects,destination).protection;
