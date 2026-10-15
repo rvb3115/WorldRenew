@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { makeBlockWorld, state } from './transfer-fixtures.js';
+import { placementWorld } from './placement-fixtures.js';
+import { inspectWorld } from '../engine/world.js';
+import { createSparseSelection } from '../engine/sparse-selection.js';
+import { captureTemplateStream } from '../engine/template-capture.js';
+import { previewTemplatePlacement } from '../engine/template-placement.js';
+
+test('v2 reports exact air variant changes separately from placed blocks', t => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'worldrenew-placement-counts-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const source = inspectWorld(makeBlockWorld(path.join(base, 'source'), { version: '26.2', dataVersion: 4903, block: () => state('cave_air') }));
+  const destination = inspectWorld(placementWorld(path.join(base, 'destination'), { block: () => state('air') }));
+  const dimension = world => world.dimensions.find(value => value.id === 'minecraft:overworld').key;
+  const file = path.join(base, 'air.wrbuild'), selection = createSparseSelection({ x: 1, y: 1, z: 1 }, { x: 1, y: 1, z: 1 });
+  captureTemplateStream(file, source, dimension(source), selection);
+  const anchor = { x: 17, y: 1, z: 17 };
+  const include = previewTemplatePlacement(file, destination, dimension(destination), anchor);
+  assert.deepEqual(include.blockers, []);
+  assert.equal(include.counts.airVariant, '1');
+  assert.equal(include.counts.placed, '0');
+  assert.equal(include.counts.carved, '0');
+  assert.equal(include.effects.changedBlocks, '1');
+  const skip = previewTemplatePlacement(file, destination, dimension(destination), anchor, { airMode: 'skip' });
+  assert.deepEqual(skip.blockers, []);
+  assert.equal(skip.counts.airVariant, '0');
+  assert.equal(skip.counts.placed, '0');
+  assert.equal(skip.counts.skippedAir, '1');
+  assert.equal(skip.effects.changedBlocks, '0');
+});
