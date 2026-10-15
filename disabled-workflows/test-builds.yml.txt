@@ -1,0 +1,86 @@
+name: WorldRenew test builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'feature/**']
+    tags: ['test-*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: windows-x64
+            command: windows
+            label: Windows x64 portable EXE
+          - os: macos-15
+            target: macos-arm64
+            command: macos
+            label: Apple Silicon macOS app ZIP
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Engine and independent preservation tests
+        run: node qa/run.mjs --full
+      - name: Build unsigned test distribution
+        run: npm run build:test:${{ matrix.command }}
+      - name: Smoke-test the packaged app and final distribution
+        run: npm run test:packaged
+      - name: Upload tested download
+        id: download
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: WorldRenew-${{ matrix.target }}-${{ github.run_number }}
+          path: |
+            artifacts/${{ matrix.target }}/*.exe
+            artifacts/${{ matrix.target }}/*.zip
+            artifacts/${{ matrix.target }}/*.sha256
+            artifacts/${{ matrix.target }}/build-info.json
+            artifacts/${{ matrix.target }}/smoke-results.json
+            artifacts/${{ matrix.target }}/payload-verification.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Exact artifact download link
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.download.outputs.artifact-url }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          printf '### WorldRenew %s\n\n[Download tested build](%s)\n\nUnsigned test build. App updates are not required.\n' "$TARGET" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: WorldRenew-${{ matrix.target }}-test-evidence-${{ github.run_number }}
+          path: |
+            qa/runs/**/evidence.json
+            qa/runs/**/tests.tap
+            work/**/*.png
+            work/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
