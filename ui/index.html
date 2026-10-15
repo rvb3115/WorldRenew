@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+  <title>WorldRenew</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="transfer.css">
+  <link rel="stylesheet" href="simple.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.3 preview</span></div>
+    <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="open-build-file">Open build file</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
+  </header>
+  <main>
+    <aside class="sidebar">
+      
+      
+      
+      
+      
+      <div class="sidebar-rule"></div>
+      <details class="plain-details" id="updates-panel"><summary>Application updates</summary>
+        <p id="update-version" class="small"></p>
+        <label><input type="checkbox" id="update-auto-check"> Check automatically at startup</label>
+        <label><input type="checkbox" id="update-auto-download"> Download verified updates automatically</label>
+        <label for="update-channel">Release channel</label>
+        <select id="update-channel"><option value="stable">Stable</option><option value="beta">Beta · includes previews</option></select>
+        <button id="update-save" class="full">Save update settings</button>
+        <button id="update-check" class="full">Check for updates</button>
+        <button id="update-download" class="full" disabled>Download verified update</button>
+        <button id="update-reveal" class="full">Show verified download</button>
+        <p id="update-status" class="small" role="status" aria-live="polite">Loading update settings…</p>
+        <details><summary>Release notes</summary><pre id="update-notes"></pre></details>
+        <p class="small">Automatic installation is not available yet. After downloading, finish world operations and quit before installing. Keep the previous app or installer to roll back. App updates never upgrade or regenerate worlds.</p>
+      </details>
+      <div class="eyebrow">Open world</div>
+      <h2 id="world-name">No world open</h2>
+      <details class="plain-details"><summary>World details</summary><p id="world-path" class="path">Choose a vanilla Java save to begin.</p><dl id="metadata"><dt>Edition</dt><dd>Java Edition</dd><dt>Target baseline</dt><dd>26.3+</dd></dl>
+      <p id="compatibility" class="compatibility">Local files. Ordinary vanilla saves.</p></details>
+      <p class="sidebar-bottom">Open a Java world folder containing <code>level.dat</code>. Close Minecraft while inspecting it.</p>
+    </aside>
+    <section class="workspace">
+      <div class="page-heading"><div><h1>World map</h1><p>Select a small area to explore its blocks in 3D.</p></div><div class="page-actions"><button id="rescan" disabled>Refresh</button><button id="toggle-protection" aria-expanded="false" aria-controls="protection-panel">Protection &amp; copies</button><button id="open-transfer" class="primary" disabled>Open 3D preview</button></div></div>
+      <div class="stats"><div><span>EXISTING CHUNKS</span><strong id="chunk-count">—</strong></div><div><span>REGION FILES</span><strong id="region-count">—</strong></div><div><span>DIMENSIONS</span><strong id="dimension-count">—</strong></div><div><span>PROTECTED IN PLAN</span><strong id="protected-count">0</strong></div></div>
+      <section class="map-card" aria-label="World chunk map">
+        <div class="map-toolbar"><div><label for="dimension">Dimension</label><select id="dimension" disabled><option>Open a world first</option></select></div><div class="map-actions"><button id="zoom-out" disabled aria-label="Zoom out">−</button><button id="zoom-in" disabled aria-label="Zoom in">+</button><button id="fit" disabled>Fit world</button></div></div>
+        <div id="map-container">
+          <canvas id="map" tabindex="0" aria-label="Existing chunks. Drag to select. Shift-drag to pan. Use the coordinate inputs for keyboard selection."></canvas>
+          <div id="empty-state"><h2>Open a Minecraft world</h2><p>Choose a save folder to see its map<br>and select a build to preview.</p><button id="open-empty" class="primary">Choose a world folder</button><small>No mods. No uploads. No changes to your save.</small></div>
+          <div id="map-empty" hidden>No saved terrain chunks in this dimension.</div>
+        </div>
+        <div class="map-footer"><div class="legend"><span><i class="existing"></i> Existing</span><span><i class="protected"></i> Protected</span><span><i class="selected"></i> Selected</span><span><i class="invalid"></i> Invalid</span><span id="regeneration-legend" hidden><i class="candidate"></i> Candidate · green kept</span></div><span id="coordinates">CHUNK GRID · 16 × 16 BLOCKS</span></div>
+      </section>
+      <div class="under-map"><span>Drag to select · Shift-drag to pan · Scroll to zoom</span><span id="map-selection-summary">Select an area for 3D preview</span></div>
+      <details class="validation"><summary>Inspection notes <span id="issue-count">0</span></summary><ul id="issues"><li>Open a world to see validation results.</li></ul></details>
+    </section>
+    <aside class="inspector" id="protection-panel" hidden>
+      <h2>Protect chunks</h2><p>Select chunks on the map, then protect them in your plan.</p>
+      <div class="selection-count"><strong id="selection-count">0</strong><span>chunks selected</span><button id="clear-selection" disabled>Clear</button></div>
+      <fieldset id="selection-fields" disabled><legend>Select by chunk coordinates</legend><div class="coordinate-grid"><label>From X<input id="x1" type="number" step="1" value="0"></label><label>From Z<input id="z1" type="number" step="1" value="0"></label><label>To X<input id="x2" type="number" step="1" value="0"></label><label>To Z<input id="z2" type="number" step="1" value="0"></label></div><button id="select-area" class="full">Select existing chunks</button></fieldset>
+      <button id="protect" disabled class="primary full">◇ Protect selection</button><button id="unprotect" disabled class="full subtle">Remove protection</button>
+      <div class="save-row"><span id="save-state">No project yet</span><button id="save" disabled>Save plan</button></div><p id="project-location" class="small">Plans are saved outside your Minecraft world.</p>
+      <div class="sidebar-rule"></div>
+      <div class="eyebrow">REGENERATION DRY-RUN</div><p>Review up to 10,000 selected chunks. Protected chunks and their buffer stay out of the plan.</p>
+      <label class="buffer-field">Keep around protected chunks<select id="protection-buffer"><option value="0">No extra buffer</option><option value="1" selected>1 chunk · 16 blocks</option><option value="2">2 chunks · 32 blocks</option><option value="4">4 chunks · 64 blocks</option><option value="8">8 chunks · 128 blocks</option></select></label>
+      <button id="preview" disabled class="full">Preview selection</button><p id="preview-result" class="small" role="status">Preview the chunks to remove from a separate copy.</p>
+      <details id="regeneration-details" hidden><summary>Review details</summary><p id="regeneration-counts" class="small"></p><ul id="regeneration-findings" class="small"></ul><p class="small">Export creates a verified backup and a separate test copy. Only reviewed records are removed. Game-load certification is pending.</p></details>
+      <button id="save-regeneration" disabled class="full">Save dry-run report</button>
+      <label class="checkbox"><input id="closed" type="checkbox">Minecraft and any server using this world are closed.</label>
+      <section class="copy-card"><h3>Regeneration test copy</h3><p id="regeneration-eligibility">Preview a selection to check export availability.</p><p>Experimental · Java 26.3 Overworld only. Minecraft generates the missing chunks when you load the copy. Terrain seams and structures crossing the boundary may need attention.</p><label class="checkbox"><input id="regeneration-ack" type="checkbox">I reviewed the removals and will test the exported copy. Minecraft game-load validation is still pending.</label><button id="export-regeneration" disabled class="full">Export regeneration test copy…</button><p id="regeneration-result" class="small" role="status"></p><button id="reveal-regeneration" hidden class="full">Show exported world</button></section>
+      <div class="copy-card"><h3>Copy this world</h3><p>Create a complete copy and verify every file. Your original stays in place.</p><button id="copy" disabled class="full">Create verified copy</button></div>
+    </aside>
+  </main>
+  <footer class="statusbar"><span id="status" role="status" aria-live="polite">Ready. Open a Minecraft Java world folder to begin.</span><span>Original worlds stay unchanged</span></footer>
+  <dialog id="build-dialog" aria-labelledby="build-title">
+    <header class="build-header"><div><h2 id="build-title">Build preview</h2><p>Select a build, then check where it would fit in another world.</p></div><button id="close-build" aria-label="Close build preview">✕</button></header>
+    <div class="build-body">
+      <section class="build-view">
+        <div class="build-toolbar"><label>View<select id="build-view-mode"><option value="spectator">Fly through / 3D</option><option value="iso">Isometric cutaway</option><option value="horizontal">Horizontal slice</option><option value="vertical">Vertical slice</option></select></label><label>Show<select id="build-layer"><option value="source">Source blocks</option><option value="destination">Destination before</option><option value="proposed">Proposed placement</option><option value="differences">Placement conflicts</option></select></label><button id="build-fit">Fit</button><button id="build-near-camera">Load around camera</button></div>
+        <div class="texture-controls"><label><input type="checkbox" id="use-textures" checked> Block textures</label><button id="choose-textures">Choose texture pack…</button><span id="texture-note" role="status">Textures load from your installed Minecraft.</span></div><div class="build-canvas-wrap"><canvas id="build-3d" aria-label="Free flying block preview. Right drag to look, W A S D to move, Q E to fly vertically, click to select a block."></canvas><canvas id="build-canvas" aria-label="Block volume preview. Use the slice selectors and sliders to inspect underground, above-ground and floating sections."></canvas><div id="build-placeholder"><h3>Load an area to see its blocks</h3><p>Choose a source dimension and selection.</p></div></div>
+        <div class="build-pickbar"><label>Click action <select id="build-pick"><option value="inspect">Inspect block</option><option value="first">Source corner 1</option><option value="second">Source corner 2</option><option value="place">Destination corner</option></select></label><span id="build-camera">Camera —</span></div><p class="build-hint">Right-drag to look · WASD to move · Q/E down/up · Shift faster · no collision. Use Load around camera to explore farther. Your selected build stays fixed. Outside the outline is uninspected.</p><details id="build-view-tools" class="plain-details"><summary>Camera &amp; cutaway</summary><div class="build-jump"><label>Flight speed<select id="camera-speed"><option value="4">Precise</option><option value="20" selected>Normal</option><option value="64">Fast</option></select></label><label>Camera X<input id="camera-x" type="number" value="0" step="0.5"></label><label>Y<input id="camera-y" type="number" value="64" step="0.5"></label><label>Z<input id="camera-z" type="number" value="0" step="0.5"></label><button id="camera-go">Fly to</button></div><div class="build-sliders"><label>Height / Y <output id="build-y-label">—</output><input id="build-y" type="range" min="0" max="1" value="1" disabled></label><label>Depth / Z <output id="build-z-label">—</output><input id="build-z" type="range" min="0" max="1" value="1" disabled></label></div>
+        </details><div id="build-hover" class="build-hint">Block models where available · approximate biome colors</div>
+        <div class="build-legend"><span class="diff-place">■ Placed</span><span class="diff-overwrite">■ Overwritten</span><span class="diff-carve">■ Carved air</span><span class="diff-fluid">■ Fluid change</span><span class="diff-unknown">■ Unknown data</span></div>
+        <div id="build-summary" class="build-metrics">No block volume scanned yet.</div>
+        <details class="build-findings"><summary>Review notes</summary><ul id="build-findings"><li>World files remain untouched. This tool currently previews placements only.</li></ul></details>
+      </section>
+      <aside class="build-controls"><div class="build-steps" role="tablist" aria-label="Build preview steps"><button id="step-source" role="tab" aria-selected="true" aria-controls="source-pane">1. Select build</button><button id="step-destination" role="tab" aria-selected="false" aria-controls="destination-pane">2. Place build</button></div><div id="source-pane" role="tabpanel" aria-labelledby="step-source">
+        <h3 id="build-source-name">Source world</h3><label class="build-field">Source dimension<select id="build-source-dimension"></select></label>
+        <button id="pick-corners" class="primary full">Pick two corners in the preview</button><p>Include basements, roofs, and any floating sections.</p>
+        <label class="build-field">Height preset<select id="build-height"><option value="full">Full dimension height</option><option value="roof">Nether roof · Y 128–255</option><option value="below">Nether below roof · Y 0–127</option><option value="custom">Custom height</option></select></label><p id="build-dimension-note">Each selection belongs to exactly one dimension.</p><details id="selection-coordinates" class="plain-details"><summary>Selection coordinates</summary><fieldset id="build-bounds"><legend>Inclusive selection corners</legend><div class="build-coordinate-grid"><label>From X<input id="build-minX" type="number" step="1"></label><label>From Y<input id="build-minY" type="number" step="1"></label><label>From Z<input id="build-minZ" type="number" step="1"></label><label>To X<input id="build-maxX" type="number" step="1"></label><label>To Y<input id="build-maxY" type="number" step="1"></label><label>To Z<input id="build-maxZ" type="number" step="1"></label></div></fieldset>
+        </details><p class="air-policy">The box includes air. Placement review shows any destination terrain it would erase.</p>
+        <button id="build-capture" class="primary full">Load selected area</button><button id="build-archive-save" class="full" disabled>Save portable build…</button><p id="portable-summary">A portable build freezes blocks and air. It also contains nearby blocks, inventories and entities from the complete intersecting chunks.</p><details class="build-library" id="selection-library"><summary>Saved selections</summary><label class="build-field">Selection name<input id="build-selection-name" maxlength="80" placeholder="Basement + house, roof hub…"></label><button id="build-selection-save" class="full" disabled>Save selection</button><label class="build-field">Saved in this source world<select id="build-library"><option value="">No saved selections</option></select></label><button id="build-selection-load" class="full" disabled>Reload selection</button><p>Saved boundaries only. Reload reads the current source world.</p></details><button id="next-placement" class="primary full">Next: place build</button></div>
+        <div id="destination-pane" role="tabpanel" aria-labelledby="step-destination" hidden>
+        <button id="build-open-destination" class="full">Choose destination world</button><p id="build-destination-name">No destination selected.</p>
+        <label class="build-field">Destination dimension<select id="build-destination-dimension" disabled></select></label>
+        <fieldset id="build-anchor"><legend>Place the minimum corner at</legend><div class="build-coordinate-grid"><label>X<input id="build-anchor-x" type="number" step="1" value="0"></label><label>Y<input id="build-anchor-y" type="number" step="1" value="0"></label><label>Z<input id="build-anchor-z" type="number" step="1" value="0"></label></div></fieldset>
+        <button id="build-view-destination" class="full" disabled>Explore around these coordinates</button><div class="build-nudges">Move one block <button data-axis="x" data-step="-1">X−</button><button data-axis="x" data-step="1">X+</button><button data-axis="y" data-step="-1">Y−</button><button data-axis="y" data-step="1">Y+</button><button data-axis="z" data-step="-1">Z−</button><button data-axis="z" data-step="1">Z+</button></div><p>Move the corner, then preview again to update the blocks.</p><button id="build-preview" class="primary full" disabled>Preview placement</button><button id="build-save" class="full" disabled>Save preview report</button>
+        <section class="copy-placement"><p id="copy-eligibility">Save or open a portable build to check copy placement.</p><label><input id="placement-closed" type="checkbox"> Minecraft and all servers using this world are closed. I reviewed the blocks that will be replaced or carved.</label><button id="build-place-copy" class="primary full" disabled>Create test world copy…</button><p>Creates a verified backup, then places supported building blocks into a separate copy. Experimental: test the copy in Minecraft. Rotation and blending are unavailable.</p><p id="placement-result" role="status"></p><button id="reveal-placement" class="full" hidden>Show test world in Finder</button></section></div>
+      </aside>
+    </div>
+    <footer id="build-status" role="status" aria-live="polite">Read-only build planning. Neither world is modified.</footer>
+  </dialog>
+  <script src="renderer.js"></script>
+  <script src="transfer.js"></script>
+  <script src="updates.js"></script>
+</body>
+</html>
