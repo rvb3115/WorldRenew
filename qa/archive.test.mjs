@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createFixture, regionPath, writeRecords, terrainTags } from './fixtures.mjs';
+import { treeHashes } from './oracle.mjs';
+import { inspectWorld } from '../engine/world.js';
+import { captureVolume, volumeBlock } from '../engine/volumes.js';
+import { captureBuildArchive, saveBuildFile, readBuildFile } from '../engine/build-archive.js';
+import { state } from '../tests/transfer-fixtures.js';
+
+for (const compact of [false, true]) test(`26.3 ${compact ? 'compact-string' : 'id/properties'} NBT survives volume capture and portable archive round trip`, t => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'worldrenew-codec-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = createFixture(path.join(base, 'source')), file = path.join(root, regionPath('overworld', 'region'));
+  const tags = terrainTags(0, 0, () => state('oak_stairs', { facing: 'west', half: 'top', waterlogged: 'true' }));
+  if (compact) tags.sections[1].values[0].block_states[1].palette = [9, { type: 8, values: ['minecraft:stone'] }];
+  fs.unlinkSync(file); writeRecords(file, [{ x: 0, z: 0, tags }]);
+  const before = treeHashes(root), world = inspectWorld(root), dimension = world.dimensions.find(d => d.id === 'minecraft:overworld');
+  const bounds = { minX: 0, maxX: 15, minY: 64, maxY: 79, minZ: 0, maxZ: 15 };
+  const volume = captureVolume(world, dimension.key, bounds), archive = captureBuildArchive(world, dimension.key, bounds);
+  const target = path.join(base, 'test.wrbuild'); saveBuildFile(target, archive, [root]);
+  const opened = readBuildFile(target);
+  const expected = compact ? { Name: 'minecraft:stone' } : { Name: 'minecraft:oak_stairs', Properties: { facing: 'west', half: 'top', waterlogged: 'true' } };
+  assert.equal(volume.complete, true); assert.equal(volume.stats.total, 4096);
+  assert.deepEqual(volumeBlock(volume, 8, 65, 8), expected);
+  assert.deepEqual(opened.volume.palette, volume.palette); assert.deepEqual(opened.volume.voxels, volume.voxels);
+  assert.equal(opened.archive.records.find(r => r.store === 'region').nbt, archive.records.find(r => r.store === 'region').nbt);
+  assert.deepEqual(treeHashes(root), before);
+});
