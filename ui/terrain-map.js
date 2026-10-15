@@ -8,7 +8,7 @@ export class TerrainMap {
   constructor(api, redraw) {
     this.api=api;this.redraw=redraw;this.states=new Map();this.dimensions=new Map();this.tileLru=new Map();
     this.tiles=new Map();this.overviews=new Map();this.generation=0;this.inflight=false;this.timer=null;this.visible=[];this.enabled=false;this.regions=[];this.failedRegions=[];this.chunkIndex=new Map();
-    this.dirtyRegions=new Set();this.base=null;
+    this.dirtyRegions=new Set();this.base=null;this.backgroundPaused=false;this.regionPriority=[];this.focus={x:0,z:0};
   }
   reset(world,dimension,session,mode,y) {
     this.generation++;clearTimeout(this.timer);this.timer=null;
@@ -32,7 +32,7 @@ export class TerrainMap {
       if((bytes<=16*1024*1024&&this.states.size<=8)||old===state)break;
       bytes-=old.coarse.bytes;this.states.delete(oldId);for(const k of old.tiles.keys())this.tileLru.delete(oldId+':'+k);
     }
-    this.coarse=state.coarse;this.tiles=state.tiles;state.epoch=(state.epoch??0)+1;state.validated=new Set();state.validateCursor=0;state.queue=new OverviewQueue(state.coarse);state.retry=[];state.turn=0;
+    this.regionPriority=this.regions;this.coarse=state.coarse;this.tiles=state.tiles;state.epoch=(state.epoch??0)+1;state.validated=new Set();state.validateCursor=0;state.queue=new OverviewQueue(state.coarse);state.retry=[];state.turn=0;
     this.overviews.clear();this.dirtyRegions.clear();this.viewKey=null;this.base=null;this.visible=[];this.overLimit=false;this.lastError='';
   }
   rememberTile(state,tile) {
@@ -64,6 +64,11 @@ export class TerrainMap {
     const collect=viewKey!==this.viewKey;ctx.imageSmoothingEnabled=false;
     if(collect){
       this.base=document.createElement('canvas');this.base.width=width;this.base.height=height;
+      this.focus={x:(bounds.minX+bounds.maxX)/2,z:(bounds.minZ+bounds.maxZ)/2};
+      this.regionPriority=[...this.regions].sort((a,b)=>{
+        const rank=r=>(intersects(r.rx*32,r.rz*32,32,bounds)?0:1e20)+(r.rx*32+16-this.focus.x)**2+(r.rz*32+16-this.focus.z)**2;
+        return rank(a)-rank(b);
+      });
       let total=0;const found=[];
       for(const r of this.regions)if(intersects(r.rx*32,r.rz*32,32,bounds)){
         this.dirtyRegions.add(key(r.rx,r.rz));
@@ -107,22 +112,37 @@ export class TerrainMap {
     if (size >= 25) ctx.fillText(label, (left + right) / 2, (top + bottom) / 2 + 4);
     ctx.restore();
   }
+  setBackgroundPaused(paused){this.backgroundPaused=Boolean(paused);clearTimeout(this.timer);this.timer=null;this.describe();this.schedule();}
+  detailChunks(){
+    if(this.overLimit)return [];
+    return this.visible.filter(c=>this.regionReady(this.state,c.x,c.z)&&!this.state.tiles.has(key(c.x,c.z)))
+      .sort((a,b)=>(a.x-this.focus.x)**2+(a.z-this.focus.z)**2-(b.x-this.focus.x)**2-(b.z-this.focus.z)**2).slice(0,TERRAIN_BATCH_LIMIT);
+  }
+  urgentRegions(){
+    if(this.overLimit)return [];
+    const ids=new Set(this.visible.filter(c=>!this.regionReady(this.state,c.x,c.z)).map(c=>key(Math.floor(c.x/32),Math.floor(c.z/32))));
+    return this.regionPriority.filter(r=>ids.has(key(r.rx,r.rz))).slice(0,32);
+  }
   schedule() {
     if(this.timer||!this.enabled||this.inflight||document.body.classList.contains('busy'))return;
     const s=this.state;
-    const detail=!this.overLimit&&this.visible.some(c=>this.regionReady(s,c.x,c.z)&&!s.tiles.has(key(c.x,c.z)));
-    if(s.validateCursor>=s.regions.length&&!s.queue.pending&&!s.retry.length&&!detail)return;
+    const detail=this.detailChunks().length,urgent=this.urgentRegions().length;
+    if(this.backgroundPaused&&!detail&&!urgent)return;
+    if(s.validateCursor>=s.regions.length&&!s.queue.pending&&!s.retry.length&&!detail&&!urgent)return;
     this.timer=setTimeout(()=>{this.timer=null;this.load();},this.retryDelay===400?400:0);
   }
   async load() {
     if(this.inflight||!this.enabled||document.body.classList.contains('busy'))return;
     const s=this.state,epoch=s.epoch,request={session:s.session,dimension:s.dimension,mode:s.mode,y:s.y};
     let chunks=[],validating=false;
-    const detail=!this.overLimit?this.visible.filter(c=>this.regionReady(s,c.x,c.z)&&!s.tiles.has(key(c.x,c.z))).slice(0,TERRAIN_BATCH_LIMIT):[];
-    if(s.validateCursor<s.regions.length&&(s.turn++%2===0||!s.queue.pending&&!detail.length)){
-      validating=true;request.kind='overview';request.regions=s.regions.slice(s.validateCursor,s.validateCursor+32).map(({rx,rz})=>({rx,rz}));
+    const detail=this.detailChunks(),urgent=this.urgentRegions();
+    const validate=urgent.length?urgent:!this.backgroundPaused&&s.validateCursor<s.regions.length&&(!detail.length&&(s.turn++%2===0||!s.queue.pending))
+      ?this.regionPriority.filter(r=>!s.validated.has(key(r.rx,r.rz))).slice(0,32):[];
+    if(validate.length){
+      validating=true;request.kind='overview';request.regions=validate.map(({rx,rz})=>({rx,rz}));
     }else{
-      chunks=s.retry.length?s.retry.splice(0,TERRAIN_BATCH_LIMIT):detail.length?detail:s.queue.take(TERRAIN_BATCH_LIMIT);
+      if(!detail.length&&this.backgroundPaused)return;
+      chunks=detail.length?detail:s.retry.length?s.retry.splice(0,TERRAIN_BATCH_LIMIT):s.queue.take(TERRAIN_BATCH_LIMIT);
       if(!chunks.length){this.schedule();return;}
       request.chunks=chunks.map(({x,z})=>({x,z}));request.summaryOnly=!detail.length;
     }
@@ -130,7 +150,9 @@ export class TerrainMap {
     try{
       const response=await this.api.terrainTiles(request);
       if(s.session!==this.session||s.epoch!==epoch)return;
-      if(response.error?.code==='TERRAIN_BUSY'){this.retryDelay=400;if(!validating)s.retry.unshift(...chunks);return;}
+      // Visible detail is rediscovered on every request; only dequeued overview
+      // work needs putting back. Requeueing detail would grow retries on BUSY.
+      if(response.error?.code==='TERRAIN_BUSY'){this.retryDelay=400;if(!validating&&!detail.length)s.retry.unshift(...chunks);return;}
       this.retryDelay=0;
       if(response.error)throw Object.assign(new Error(response.error.message),{code:response.error.code});
       this.metrics=response.result;
@@ -152,7 +174,7 @@ export class TerrainMap {
     }catch(error){
       if(s.session!==this.session||s.epoch!==epoch)return;
       if(this.state===s){this.lastError=error.message;this.reason=error.message;this.enabled=false;s.validated.clear();this.overviews.clear();this.viewKey=null;}
-      if(!validating)s.retry.unshift(...chunks);
+      if(!validating&&!detail.length)s.retry.unshift(...chunks);
     }finally{this.inflight=false;this.redraw();this.schedule();}
   }
   rememberOverview(state,tile){
@@ -166,11 +188,12 @@ export class TerrainMap {
     delete el.dataset.error;
     const counts=this.coarse.counts,overviewPending=counts[0],overviewReady=counts[1],incomplete=counts[5],overviewFailed=counts[3]+counts[4]+incomplete;
     const validating=this.state.regions.length-this.state.validateCursor;
-    Object.assign(el.dataset,{overviewReady,overviewPending,overviewFailed,overviewIncomplete:incomplete,validating,total:this.allChunks.length,decoded:this.metrics?.decoded??0,diskHits:this.metrics?.diskHits??0,cacheBytes:this.metrics?.disk?.bytes??0,summaryBytes:[...this.states.values()].reduce((n,s)=>n+s.coarse.bytes,0)});
-    const progress=`Whole dimension: ${this.coarse.completed.toLocaleString()} / ${this.allChunks.length.toLocaleString()} checked · ${overviewPending.toLocaleString()} pending · ${incomplete.toLocaleString()} generation incomplete · ${(counts[3]+counts[4]).toLocaleString()} unreadable/unsupported${validating?` · validating ${validating} cached regions`:''}.`;
+    Object.assign(el.dataset,{overviewReady,overviewPending,overviewFailed,overviewIncomplete:incomplete,overviewUnreadable:counts[3],overviewUnsupported:counts[4],validating,total:this.allChunks.length,decoded:this.metrics?.decoded??0,diskHits:this.metrics?.diskHits??0,cacheBytes:this.metrics?.disk?.bytes??0,paused:String(this.backgroundPaused),phase:!overviewPending?'complete':this.state.queue.seeding?'coverage':'fill',summaryBytes:[...this.states.values()].reduce((n,s)=>n+s.coarse.bytes,0)});
+    const percent=this.allChunks.length?(100*this.coarse.completed/this.allChunks.length).toFixed(1):'100.0';
+    const progress=`${this.backgroundPaused?'Overview paused · visible detail still loads. ':''}Whole dimension: ${this.coarse.completed.toLocaleString()} / ${this.allChunks.length.toLocaleString()} checked (${percent}%) · ${overviewReady.toLocaleString()} terrain ready · ${overviewPending.toLocaleString()} still pending. Preview unavailable: ${incomplete.toLocaleString()} generation incomplete · ${counts[3].toLocaleString()} unreadable · ${counts[4].toLocaleString()} unsupported${validating?` · validating ${validating} cached regions`:''}.`;
     if(this.overLimit){
       Object.assign(el.dataset,{mode:'overview',ready:overviewReady,pending:overviewPending,failed:overviewFailed,incomplete,sampled:this.allChunks.length});
-      el.textContent=`${progress} Per-chunk terrain colors; zoom adds block detail. Gray is pending. ${this.metrics?.disk?.warning??''}`;return;
+      el.textContent=`${progress} ${overviewPending&&this.state.queue.seeding?'Loading a first pass of actual terrain samples across regions. ':''}Zoom or Go loads that area first. Gray is still pending, never estimated terrain. Completed batches are cached for reopening. ${this.metrics?.disk?.warning??''}`;return;
     }
     const tiles = this.visible.map(c => this.regionReady(this.state,c.x,c.z)?this.tiles.get(key(c.x,c.z)):null);
     const ready = tiles.filter(t => t?.status === 'ready').length, failed = tiles.filter(t => t && ['unreadable', 'unsupported'].includes(t.status)).length;
@@ -191,6 +214,7 @@ export class TerrainMap {
   requestWindow(cells) {
     this.viewKey=null;
     this.visible = cells.filter(c => this.chunkIndex.has(key(c.x,c.z)));
+    if(cells.length){this.focus={x:cells.reduce((n,c)=>n+c.x,0)/cells.length,z:cells.reduce((n,c)=>n+c.z,0)/cells.length};this.regionPriority=[...this.regions].sort((a,b)=>(a.rx*32+16-this.focus.x)**2+(a.rz*32+16-this.focus.z)**2-(b.rx*32+16-this.focus.x)**2-(b.rz*32+16-this.focus.z)**2);}
     this.overLimit = this.visible.length > TERRAIN_VISIBLE_LIMIT;
     this.schedule(); this.describe();
   }

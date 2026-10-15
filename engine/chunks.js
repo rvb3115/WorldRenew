@@ -51,14 +51,27 @@ export function decodeSection(section) {
   }
   const bits = Math.max(4, Math.ceil(Math.log2(palette.length))), perWord = Math.floor(64 / bits), expected = Math.ceil(4096 / perWord);
   requireThat(Array.isArray(states.data) && states.data.length === expected, 'BLOCK_DATA', `Block-state word count mismatch: expected ${expected}.`);
-  const words = states.data.map(value => {
+  const low = new Uint32Array(expected), high = new Uint32Array(expected);
+  for (let word = 0; word < expected; word++) {
+    const value = states.data[word];
     requireThat(typeof value === 'string' && /^-?\d+$/.test(value), 'BLOCK_DATA', 'Block-state data must be signed NBT longs.');
-    const n = BigInt(value); requireThat(n >= -(1n << 63n) && n < (1n << 63n), 'BLOCK_DATA', 'NBT long is out of range.'); return BigInt.asUintN(64, n);
-  });
-  const mask = (1n << BigInt(bits)) - 1n;
-  for (let i = 0; i < 4096; i++) {
-    const index = Number((words[Math.floor(i / perWord)] >> BigInt((i % perWord) * bits)) & mask);
-    requireThat(index < palette.length, 'BLOCK_INDEX', 'Block palette index is out of range.'); indices[i] = index;
+    const n = BigInt(value); requireThat(n >= -(1n << 63n) && n < (1n << 63n), 'BLOCK_DATA', 'NBT long is out of range.');
+    const unsigned = BigInt.asUintN(64, n);
+    low[word] = Number(unsigned & 0xffffffffn); high[word] = Number(unsigned >> 32n);
+  }
+  // Validate every signed word above, then extract at most 12-bit palette IDs
+  // using exact uint32 halves. Values that straddle bit 32 combine both halves;
+  // each disk word remains padded, so indices never span a 64-bit boundary.
+  const mask = (1 << bits) - 1;
+  let at = 0;
+  for (let word = 0; word < expected; word++) {
+    for (let slot = 0; slot < perWord && at < 4096; slot++, at++) {
+      const shift = slot * bits;
+      const value = shift >= 32 ? high[word] >>> (shift - 32) :
+        shift + bits <= 32 ? low[word] >>> shift : (low[word] >>> shift) | (high[word] << (32 - shift));
+      const index = value & mask;
+      requireThat(index < palette.length, 'BLOCK_INDEX', 'Block palette index is out of range.'); indices[at] = index;
+    }
   }
   return { y: section.Y, palette, indices };
 }

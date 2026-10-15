@@ -15,19 +15,45 @@ export class CompactOverview {
       color:'#'+this.colors[i].toString(16).padStart(6,'0')};
   }
 }
-/** Round-robin regions give early coverage, then visit every saved chunk once. */
+/** Seed each region with actual samples, then finish regions in contiguous batches.
+ * Keeping each request in one region avoids thrashing the bounded header/cache LRU.
+ * Samples never paint neighboring uninspected chunks: those remain pending.
+ */
 export class OverviewQueue {
-  constructor(coarse){this.coarse=coarse;this.queue=[];this.head=0;}
-  add(region){this.queue.push({region,cursor:0});}
-  take(limit){
-    const batch=[];
-    while(batch.length<limit&&this.head<this.queue.length){
-      const item=this.queue[this.head++],chunks=item.region.chunks;
-      while(item.cursor<chunks.length&&this.coarse.has(`${chunks[item.cursor].x},${chunks[item.cursor].z}`))item.cursor++;
-      if(item.cursor<chunks.length){batch.push(chunks[item.cursor++]);if(item.cursor<chunks.length)this.queue.push(item);}
+  constructor(coarse){this.coarse=coarse;this.queue=[];this.seedHead=0;this.head=0;}
+  add(region){
+    const cells=new Map();
+    for(let i=0;i<region.chunks.length;i++){
+      const c=region.chunks[i],x=(c.x%32+32)%32,z=(c.z%32+32)%32,id=Math.floor(z/8)*4+Math.floor(x/8);
+      const distance=(x%8-4)**2+(z%8-4)**2;
+      if(!cells.has(id)||distance<cells.get(id).distance)cells.set(id,{index:i,distance});
     }
-    if(this.head>1024){this.queue=this.queue.slice(this.head);this.head=0;}
+    const sample=[...cells.values()].map(c=>c.index);
+    this.queue.push({region,cursor:0,sample,sampleCursor:0});
+  }
+  take(limit){
+    if(!Number.isInteger(limit)||limit<1)throw new Error('Use a positive bounded batch size.');
+    const batch=[];
+    // One region per request, including the first coverage pass.
+    while(this.seedHead<this.queue.length){
+      const item=this.queue[this.seedHead];
+      while(item.sampleCursor<item.sample.length&&batch.length<limit){
+        const c=item.region.chunks[item.sample[item.sampleCursor++]];
+        if(!this.coarse.has(`${c.x},${c.z}`))batch.push(c);
+      }
+      if(item.sampleCursor===item.sample.length)this.seedHead++;
+      if(batch.length)return batch;
+    }
+    while(this.head<this.queue.length){
+      const item=this.queue[this.head],chunks=item.region.chunks;
+      while(item.cursor<chunks.length&&batch.length<limit){
+        const c=chunks[item.cursor++];if(!this.coarse.has(`${c.x},${c.z}`))batch.push(c);
+      }
+      if(item.cursor===chunks.length)this.head++;
+      if(batch.length)return batch;
+    }
     return batch;
   }
-  get pending(){return this.head<this.queue.length;}
+  get pending(){return this.seedHead<this.queue.length||this.head<this.queue.length;}
+  get seeding(){return this.seedHead<this.queue.length;}
 }

@@ -28,8 +28,9 @@ export class TopographicMap {
   setScale(value){if(!this.canInteract())return;this.distance=distanceForSlider(value);this.syncScaleControl();this.requestFrame();}
   resetScale(){this.distance=REFERENCE_DISTANCE;this.syncScaleControl();this.requestFrame();}
   setSelection(selection,bounds){this.selection=selection;this.selectionBounds=bounds;this.requestFrame();}
-  fitSelection(){
+  fitSelection({explicit=false}={}){
     const b=this.selectionBounds;if(!b)return;
+    if(explicit){this.yaw=0;this.tilt=.83;}
     this.x=(b.minX+b.maxX+1)*8;this.z=(b.minZ+b.maxZ+1)*8;this.y=128;this.focusHeight=false;
     this.distance=fitSelectionDistance(b,{aspect:this.canvas.clientWidth/this.canvas.clientHeight,yaw:this.yaw,tilt:this.tilt});this.changed();
   }
@@ -84,18 +85,20 @@ export class TopographicMap {
     // Markers are annotations at a common plane, never inferred elevations.
     // A subtle base also permits picking decoded empty columns without filling them.
     const marker=new THREE.Mesh(new THREE.PlaneGeometry(16,16),this.statusMaterial(tile.status==='ready'?'empty':tile.status));
-    marker.rotation.x=-Math.PI/2;marker.position.set(8,tile.status==='ready'?-66:this.y-2,8);group.add(marker);
+    marker.rotation.x=-Math.PI/2;marker.position.set(8,-66,8);group.add(marker);
     marker.visible=tile.status!=='ready'||tile.ids.some(id=>id===0);
     marker.userData={tile,marker:true};if(mesh)mesh.userData={tile,faces};
     const border=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(16,0,0),new THREE.Vector3(16,0,0),new THREE.Vector3(16,0,16),new THREE.Vector3(16,0,16),new THREE.Vector3(0,0,16),new THREE.Vector3(0,0,16),new THREE.Vector3(0,0,0)]),new THREE.LineBasicMaterial({color:0x526570}));
-    border.position.y=tile.status==='ready'?-65.9:this.y-1.9;group.add(border);
+    border.position.y=-65.9;group.add(border);
     border.visible=tile.status!=='ready'||!tile.ids.some(id=>id!==0);
     const entry={group,mesh,grid,marker,border,tile,signature};this.scene.add(group);this.style(entry);return entry;
   }
   style(entry){
     const color=this.mark?.(entry.tile.x,entry.tile.z);
     for(const line of [entry.grid,entry.border].filter(Boolean)){line.material.color.set(color??(line===entry.grid?'#112831':'#526570'));line.material.opacity=color?1:.7;line.material.depthTest=!color;line.renderOrder=color?3:0;}
-    if(entry.tile.status!=='ready'){entry.marker.position.y=this.y-2;entry.border.position.y=this.y-1.9;}
+    // Status annotations stay below every supported terrain height. Placing them
+    // at the camera target would hide lower surfaces behind absent/error tiles.
+    entry.marker.position.y=-66;entry.border.position.y=-65.9;
   }
   disposeEntry(entry){this.scene.remove(entry.group);entry.group.traverse(object=>{object.geometry?.dispose();if(object.isLineSegments)object.material.dispose();});}
   clear(){for(const entry of this.entries.values())this.disposeEntry(entry);this.entries.clear();this.queue=[];}
@@ -120,7 +123,7 @@ export class TopographicMap {
     const inWindow=topographicWindow(this.x,this.z).filter(c=>this.selection.has(key(c.x,c.z))).length;
     Object.assign(this.canvas.dataset,{meshes:String(this.entries.size),triangles:String(triangles),building:String(this.queue.length),yaw:String(this.yaw),centerX:String(this.x),centerZ:String(this.z),distance:String(this.distance),viewScale:String(REFERENCE_DISTANCE/this.distance),selectedTotal:String(this.selection.size),selectedInWindow:String(inWindow),selectedOutside:String(this.selection.size-inWindow),states:JSON.stringify(counts),draws:String((Number(this.canvas.dataset.draws)||0)+1)});
     this.syncScaleControl();
-    document.getElementById('topographic-selection-status').textContent=this.selection.size?`${this.selection.size.toLocaleString()} selected · ${inWindow} inside detail window · ${(this.selection.size-inWindow).toLocaleString()} outside retained. Blue rectangle is selection bounds; gaps may be unselected.`:'Selection can extend beyond the detail window. Use Add, Select range or Select all.';
+    document.getElementById('topographic-selection-status').textContent=this.selection.size?`${this.selection.size.toLocaleString()} selected · ${inWindow} inside the ${TOPO_CHUNK_LIMIT}-chunk detail window · ${(this.selection.size-inWindow).toLocaleString()} outside retained. Blue rectangle frames all selection bounds; gaps may be unselected. ${inWindow?'Only the center detail window is rendered.':'Selection is disconnected or wider than the detail window; pan to a selected chunk to load it.'}`:'Selection can extend beyond the detail window. Use Add, Select range or Select all.';
     document.getElementById('topographic-position').textContent=`Center X ${Math.round(this.x)} · Z ${Math.round(this.z)} · rotation ${Math.round(this.yaw*180/Math.PI)}° · ${this.entries.size}/${TOPO_CHUNK_LIMIT} tiles`;
     if(this.queue.length)this.requestFrame();
   }

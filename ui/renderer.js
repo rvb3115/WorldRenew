@@ -21,7 +21,7 @@ function setBusy(value) {
   $('open-build-file').disabled=$('templates-open').disabled=value;
   $('open').disabled = $('open-empty').disabled = value;
   $('open-transfer').disabled = value || !world;
-  for (const id of ['rescan', 'create-template', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-view', 'topographic-north', 'map-jump', 'fit-selection', 'selection-mode', 'select-all', 'select-range', 'view-scale', 'view-scale-reset']) $(id).disabled = value || !world;
+  for (const id of ['rescan', 'create-template', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'terrain-pause', 'map-view', 'topographic-north', 'map-jump', 'fit-selection', 'selection-mode', 'select-all', 'select-range', 'view-scale', 'view-scale-reset']) $(id).disabled = value || !world;
   updateSelection();
   if (!value) draw();
 }
@@ -126,6 +126,7 @@ function resetTerrain() {
   draw();
 }
 $('terrain-mode').onchange = resetTerrain;
+$('terrain-pause').onclick=()=>{terrain.setBackgroundPaused(!terrain.backgroundPaused);$('terrain-pause').textContent=terrain.backgroundPaused?'Resume overview':'Pause overview';$('terrain-pause').setAttribute('aria-pressed',String(terrain.backgroundPaused));};
 $('terrain-y').onchange = () => {
   if (!$('terrain-y').checkValidity()) { status('Choose a whole height inside this dimension.', true); return; }
   resetTerrain();
@@ -171,7 +172,7 @@ function ensureTopographic() {
     tool:()=>$('map-tool').value
   });topographic.setSelection(selection,selectionBounds);return topographic;
 }
-function setMapView(enabled) {
+function setMapView(enabled,{focusSelection=false}={}) {
   try {
     const cx=(view.x+canvas.clientWidth/view.scale/2)*16,cz=(view.z+canvas.clientHeight/view.scale/2)*16;
     if(enabled)ensureTopographic();
@@ -184,9 +185,10 @@ function setMapView(enabled) {
     if(enabled&&!orbit){const option=document.createElement('option');option.value='orbit';option.textContent='Orbit';$('map-tool').append(option);}
     if(!enabled){if($('map-tool').value==='orbit')$('map-tool').value='select';orbit?.remove();}
     if(enabled)topographic.setLocation(cx,cz);draw();
+    if(enabled&&focusSelection&&selectionBounds)topographic.fitSelection({explicit:true});
   } catch(error){topographicActive=false;topographic?.setActive(false);$('map-view').value='topdown';$('topographic-map').hidden=true;for(const id of ['topographic-north','topographic-hint','topographic-overlay','view-scale-panel'])$(id).hidden=true;$('map-container').classList.remove('topographic-active');$('fit').textContent='Fit world';canvas.style.visibility='visible';status(`Topographic view unavailable: ${error.message}. Top-down remains available.`,true);draw();}
 }
-$('map-view').onchange=()=>setMapView($('map-view').value==='topographic');
+$('map-view').onchange=()=>setMapView($('map-view').value==='topographic',{focusSelection:true});
 $('topographic-north').onclick=()=>topographic?.north();
 $('view-scale').oninput=()=>topographic?.setScale(Number($('view-scale').value));
 $('view-scale-reset').onclick=()=>topographic?.resetScale();

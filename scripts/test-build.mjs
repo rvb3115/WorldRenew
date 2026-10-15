@@ -25,11 +25,11 @@ if (platform === 'darwin') {
   file = `WorldRenew-${pkg.version}-macos-arm64.app.zip`;
   // Electron's original signature no longer matches the renamed bundle. A local
   // ad-hoc seal needs no certificate/account and is not Developer ID signing.
-  const bundle = path.join(root, 'dist/WorldRenew-darwin-arm64/WorldRenew.app');
+  const bundle = path.join(root, 'dist/.macos-apps.noindex/WorldRenew-darwin-arm64/WorldRenew.app');
   run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', bundle]);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]);
   // ZIP the complete bundle, preserving executable modes and framework symlinks.
-  run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', path.join(root, 'dist/WorldRenew-darwin-arm64/WorldRenew.app'), path.join(output, file)]);
+  run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', path.join(root, 'dist/.macos-apps.noindex/WorldRenew-darwin-arm64/WorldRenew.app'), path.join(output, file)]);
 } else {
   file = `WorldRenew-${pkg.version}-windows-x64-portable.exe`;
   const { build, Platform, Arch } = await import('electron-builder');

@@ -1,5 +1,6 @@
 import {makeAtlas, textureStateKey} from './textures.js';
 import * as THREE from '../node_modules/three/build/three.module.js';
+import {blockPreviewFrame} from './preview-framing.js';
 const air = s => ['minecraft:air','minecraft:cave_air','minecraft:void_air'].includes(s?.Name);
 const faces = [
   [[1,0,0],[[1,0,0],[1,1,0],[1,1,1],[1,0,1]],.72],
@@ -37,9 +38,9 @@ export class Spectator {
   setBox(box,bounds){if(!bounds||!this.volume){box.visible=false;return;}const b=this.volume.bounds;box.position.set((bounds.minX+bounds.maxX+1)/2-b.minX,(bounds.minY+bounds.maxY+1)/2-b.minY,(bounds.minZ+bounds.maxZ+1)/2-b.minZ);box.scale.set(bounds.maxX-bounds.minX+1.012,bounds.maxY-bounds.minY+1.012,bounds.maxZ-bounds.minZ+1.012);box.visible=true;}
   setSelection(bounds){this.setBox(this.selection,bounds);}
   async setTextures(bundle,palette){const atlas=bundle?await makeAtlas(bundle,palette):null;this.textures?.texture.dispose();this.textures=atlas;if(atlas)this.models=atlas.models;this.canvas.dataset.textureCount=String(atlas?.count??0);return atlas;}
-  clear(){for(const key of ['mesh','unknownMesh','transparentMesh'])if(this[key]){this.scene.remove(this[key]);this[key].geometry.dispose();this[key].material.dispose();this[key]=null;}this.volume=null;this.loaded.visible=this.selection.visible=this.hover.visible=false;this.canvas.dataset.faceCount='0';}
+  clear(){for(const key of ['mesh','unknownMesh','transparentMesh'])if(this[key]){this.scene.remove(this[key]);this[key].geometry.dispose();this[key].material.dispose();this[key]=null;}this.volume=null;this.focusBounds=null;this.loaded.visible=this.selection.visible=this.hover.visible=false;this.canvas.dataset.faceCount='0';for(const key of ['loadedBounds','dimension','frameCenter','frameBounds'])delete this.canvas.dataset[key];}
   setVolume(v,overlay,cutY=v.bounds.maxY,cutZ=v.bounds.maxZ){
-    const changed=this.volume!==v;this.volume=v;this.hover.visible=false;for(const key of ['mesh','unknownMesh','transparentMesh'])if(this[key]){this.scene.remove(this[key]);this[key].geometry.dispose();this[key].material.dispose();this[key]=null;}
+    const changed=this.volume!==v;this.volume=v;this.canvas.dataset.loadedBounds=JSON.stringify(v.bounds);this.canvas.dataset.dimension=v.dimension;this.hover.visible=false;for(const key of ['mesh','unknownMesh','transparentMesh'])if(this[key]){this.scene.remove(this[key]);this[key].geometry.dispose();this[key].material.dispose();this[key]=null;}
     const positions=[],colors=[],uvs=[],owners=[],unknownPositions=[],unknownColors=[],unknownOwners=[],transparentPositions=[],transparentColors=[],transparentOwners=[],transparentUvs=[],focus={minX:Infinity,minY:Infinity,minZ:Infinity,maxX:-Infinity,maxY:-Infinity,maxZ:-Infinity},color=new THREE.Color(),size=v.size;
     const atlas=!overlay?this.textures:null,faceStyles=v.palette.map(s=>atlas?.faces.get(textureStateKey(s))),models=v.palette.map(s=>!overlay?this.models?.get(textureStateKey(s)):null);
     this.canvas.dataset.modelCount=String(models.filter(Boolean).length);
@@ -73,7 +74,7 @@ export class Spectator {
     this.focusBounds=Number.isFinite(focus.minX)?focus:null;
     this.setBox(this.loaded,v.bounds);if(changed)this.fit();
   }
-  fit(){if(!this.volume)return;const s=this.volume.size,b=this.focusBounds??{minX:0,minY:0,minZ:0,maxX:s.x,maxY:s.y,maxZ:s.z},cx=(b.minX+b.maxX)/2,cy=(b.minY+b.maxY)/2,cz=(b.minZ+b.maxZ)/2,extent=Math.max(b.maxX-b.minX,b.maxY-b.minY,b.maxZ-b.minZ,2);this.camera.position.set(cx+extent*.8,cy+extent*.6,cz+extent*.95);this.camera.lookAt(cx,cy,cz);this.resizeView();}
+  fit(bounds=this.volume?.bounds){if(!this.volume)return;this.resizeView();const frame=blockPreviewFrame(bounds,{aspect:this.camera.aspect,fov:this.camera.fov}),b=this.volume.bounds;this.camera.position.set(frame.position.x-b.minX,frame.position.y-b.minY,frame.position.z-b.minZ);this.camera.lookAt(frame.center.x-b.minX,frame.center.y-b.minY,frame.center.z-b.minZ);this.canvas.dataset.frameCenter=JSON.stringify(frame.center);this.canvas.dataset.frameBounds=JSON.stringify(bounds);}
   pose(){return {position:this.position(),rotation:this.camera.quaternion.toArray()};}
   restorePose(pose){if(!pose?.position)return;this.jumpTo(pose.position);this.camera.quaternion.fromArray(pose.rotation);}
   position(){if(!this.volume)return null;const b=this.volume.bounds;return {x:this.camera.position.x+b.minX,y:this.camera.position.y+b.minY,z:this.camera.position.z+b.minZ};}

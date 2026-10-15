@@ -1,6 +1,8 @@
 (() => {
   const $ = id => document.getElementById(id), api = window.worldrenew;
   const canvas = $('build-canvas'), ctx = canvas.getContext('2d'), dialog = $('build-dialog');
+  let framing;const framingReady=import('./preview-framing.js').then(module=>{framing=module;});
+  let plannerEpoch=0,sourceEpoch=0,progressCurrent=()=>true;
   let textureLoading=false, textureRequest=0, textureKey='';
   let sourceView=null,portable=null;
   let spectator = null, destinationView = null, savedSelections = [], firstCorner = null, secondCorner = null, scanMatches = false;
@@ -37,11 +39,12 @@
     $('copy-eligibility').textContent=!portable?'Save or open a portable build to check copy placement.':!preview?'Preview this build at the destination first.':preview.copyEligible?'Ready for an experimental building-block copy. Review the carved and replaced blocks.':`Copy blocked: ${preview.blockers[0]??'Review the notes.'}`;
 
   }
-  async function run(action,message) {
-    working=true;window.transferBusy=true;controls();status(message);
-    try { const r=await action();if(r.error)throw new Error(r.error.message);return r.result; }
-    catch(e){status(e.message,true);return undefined;}
-    finally{working=false;window.transferBusy=false;controls();}
+  async function run(action,message,{isCurrent=()=>true}={}) {
+    const epoch=plannerEpoch;
+    progressCurrent=isCurrent;working=true;window.transferBusy=true;controls();status(message);
+    try { const r=await action();if(epoch!==plannerEpoch||!isCurrent())return undefined;if(r.error)throw new Error(r.error.message);return r.result; }
+    catch(e){if(epoch===plannerEpoch&&isCurrent())status(e.message,true);return undefined;}
+    finally{if(epoch===plannerEpoch){working=false;window.transferBusy=false;controls();}}
   }
   function fillDimensions(select,world,value) {
     select.replaceChildren();for(const d of world.dimensions){const o=document.createElement('option');o.value=d.key;o.textContent=d.id.replace('minecraft:','').replaceAll('_',' ');select.append(o);} if(value)select.value=value;
@@ -49,7 +52,8 @@
   function readBounds(){return Object.fromEntries(['minX','minY','minZ','maxX','maxY','maxZ'].map(k=>[k,$(`build-${k}`).value.trim()===''?NaN:Number($(`build-${k}`).value)]));}
   function readAnchor(){return Object.fromEntries(['x','y','z'].map(k=>[k,$(`build-anchor-${k}`).value.trim()===''?NaN:Number($(`build-anchor-${k}`).value)]));}
   function resetPreview() { preview=null;$('air-effect-counts').textContent='Run a fresh placement preview to see affected blocks.';$('placement-closed').checked=false;$('build-save').disabled=true;$('build-layer').value='source';displayed=captured;overlay=null;geometry=null;updateSpectator();render();controls(); }
-  function invalidateSource() { scanMatches=false;preview=null;if($('build-layer').value!=='source'||!displayed){$('build-layer').value='source';displayed=captured;overlay=null;updateSpectator();render();}controls();updateSelection();$('build-summary').textContent='Selection changed. Scan again to see the updated blocks.';$('build-findings').replaceChildren();status('Selection changed. The previous preview was cleared.'); }
+  function clearSourceDisplay(){scanMatches=false;preview=null;captured=null;sourceView=null;displayed=null;overlay=null;geometry=null;plane=null;++textureRequest;$('build-layer').value='source';$('placement-closed').checked=false;$('build-hover').textContent='';$('build-placeholder').hidden=false;spectator?.clear();render();controls();}
+  function invalidateSource() { ++sourceEpoch;clearSourceDisplay();$('build-summary').textContent='Selection changed. Scan again to see the updated blocks.';$('build-findings').replaceChildren();status('Selection changed. The previous preview was cleared.'); }
   function findText(lines) { $('build-findings').parentElement.querySelector('summary').textContent=`Review notes (${lines.length})`;$('build-findings').replaceChildren();for(const line of lines){const li=document.createElement('li');li.textContent=line;$('build-findings').append(li);} }
   function metrics(items) { $('build-summary').replaceChildren();for(const [label,value] of items){const d=document.createElement('div'),s=document.createElement('span'),n=document.createElement('strong');s.textContent=label;n.textContent=Number(value).toLocaleString();d.append(s,n);$('build-summary').append(d);} }
   function sourceFindings(v) {
@@ -59,7 +63,7 @@
       'All source air is included. Automatic detection cannot decide which empty spaces belong to your build.',
       'Entities, biome transfer and terrain blending remain unimplemented. No save files were changed.'];
   }
-  function showSource(v) { sourceView=null;scanMatches=true;captured=v;preview=null;$('build-layer').value='source';displayed=v;overlay=null;setupView();metrics([['NON-AIR BLOCKS',v.stats.nonAir],['AIR BLOCKS',v.stats.air],['UNKNOWN BLOCKS',v.stats.unknown]]);findText(sourceFindings(v));controls(); }
+  function showSource(v) { sourceView=null;scanMatches=true;captured=v;preview=null;$('build-layer').value='source';displayed=v;overlay=null;setupView();spectator?.fit(v.bounds);metrics([['NON-AIR BLOCKS',v.stats.nonAir],['AIR BLOCKS',v.stats.air],['UNKNOWN BLOCKS',v.stats.unknown]]);findText([framing.previewLocationText(v.dimension,v.bounds),...sourceFindings(v)]);controls(); }
   function setupView() {
     if(!displayed)return;camera={zoom:1,x:0,y:0};geometry=null;
     for(const [id,min,max] of [['build-y',displayed.bounds.minY,displayed.bounds.maxY],['build-z',displayed.bounds.minZ,displayed.bounds.maxZ]]){$(id).min=min;$(id).max=max;$(id).value=max;$(id).disabled=false;}
@@ -89,6 +93,9 @@
     setupView();controls();
   }
   window.openTransferPlanner=async({world,dimension,area,archive=null})=>{
+    await framingReady;
+    if(!world?.dimensions?.some(d=>d.key===dimension)){status('The requested dimension is no longer available. Reopen the world and select its dimension.',true);return;}
+    ++plannerEpoch;++sourceEpoch;++textureRequest;working=false;textureLoading=false;
     $('placement-air-mode').value='include'; updateAirPolicy();
     portable=archive;$('placement-closed').checked=false;$('placement-result').textContent='';$('reveal-placement').hidden=true;$('portable-summary').textContent=archive?`Portable build: ${archive.summary.name}. Frozen content; source world is not required. ${archive.summary.entities} entity groups and ${archive.summary.blockEntities} block entities preserved. Includes supporting data from entire intersecting chunks.`:'A portable build freezes blocks and air. It also contains nearby blocks, inventories and entities from the complete intersecting chunks.';
     textureKey='';sourceView=null;sourceWorld=world;destinationWorld=null;destinationView=null;firstCorner=null;secondCorner=null;scanMatches=false;captured=null;preview=null;displayed=null;overlay=null;geometry=null;
@@ -101,7 +108,7 @@
     for(const [k,v] of [['x',b.minX],['y',b.minY],['z',b.minZ]])$(`build-anchor-${k}`).value=v;
     $('build-layer').value='source';$('build-summary').textContent='No block volume scanned yet.';$('build-placeholder').hidden=false;
     findText(['Select the full height of the build, including basements and floating sections.','This is a block and conflict preview. No transfer or terrain modification is performed.']);
-    setStep('source',false);controls();dialog.showModal();render();heightOptions();await ensureSpectator();updateSpectator();if(archive){showSource(archive.volume);findText([archive.summary.coverage,'Portable file loaded independently of the source world. Unsupported contents remain preserved but cannot yet be placed.']);status('Portable build loaded. Choose a destination to review placement.');}else{await refreshLibrary();await scanSource();}
+    const epoch=plannerEpoch;setStep('source',false);controls();if(!dialog.open)dialog.showModal();render();heightOptions();await ensureSpectator();if(epoch!==plannerEpoch||!dialog.open)return;updateSpectator();if(archive){showSource(archive.volume);findText([archive.summary.coverage,'Portable file loaded independently of the source world. Unsupported contents remain preserved but cannot yet be placed.']);status('Portable build loaded. Choose a destination to review placement.');}else{await refreshLibrary();if(epoch===plannerEpoch&&dialog.open)await scanSource();}
   };
   window.openPortableBuild=async archive=>{if(archive.schema===2)return window.openStreamingTemplate(archive);const v=archive.volume;await window.openTransferPlanner({archive,world:{metadata:{name:archive.summary.name,version:v.version,dataVersion:v.dataVersion},dimensions:[{key:v.dimension,id:archive.summary.dimension}]},dimension:v.dimension});};
   $('build-archive-save').onclick=async()=>{const r=await run(()=>api.saveBuildArchive(),'Saving frozen blocks and supporting chunk records…');if(r){portable=r;for(const[k,v]of Object.entries(r.volume.bounds))$(`build-${k}`).value=v;showSource(r.volume);$('portable-summary').textContent=`Saved portable build: ${r.file}. Source world is no longer needed. Full supporting chunks include surrounding data.`;findText([r.summary.coverage,`${r.summary.blockEntities} block entities, ${r.summary.entities} entity groups and ${r.summary.ticks} scheduled updates preserved. Their relocation may be blocked.`]);status('Portable build saved and verified. Choose a destination to review it.');}else if(r===null)status('Build save canceled.');};
@@ -135,8 +142,19 @@
   $('placement-air-mode').onchange = () => { resetPreview(); updateAirPolicy(); status('Air placement changed. Review a fresh preview before creating a copy.'); };
   $('placement-closed').onchange=controls;
   $('build-place-copy').onclick=async()=>{if(!preview?.copyEligible)return;const r=await run(()=>api.createPlacedCopy({confirmedClosed:$('placement-closed').checked,reviewDigest:preview.reviewDigest}),'Creating a verified backup and separate test world…');if(r){$('placement-result').textContent=`Reviewed ${r.blocks.toLocaleString()} blocks; changed ${r.effects.changedBlocks.toLocaleString()} and skipped ${r.effects.skippedAir.toLocaleString()} air positions in a separate test world. Backup and validation report are in the same output folder.`;$('placement-result').title=`World: ${r.world}\nBackup: ${r.backup}\nValidation report: ${r.report}`;$('reveal-placement').hidden=false;preview=null;$('placement-closed').checked=false;controls();status('Test world copy created and validated. Original world and backup are unchanged. Test the copied world in Minecraft before relying on it.');}else if(r===null)status('Copy destination selection canceled.');};
-  $('close-build').onclick=()=>dialog.close();dialog.addEventListener('close',()=>spectator?.setActive(false));dialog.addEventListener('cancel',e=>{if(working||textureLoading)e.preventDefault();});
-  async function scanSource(){scanMatches=false;preview=null;const r=await run(()=>api.captureBuild({dimension:$('build-source-dimension').value,bounds:readBounds()}),'Scanning the full source volume…');if(r){showSource(r);status(`Read ${r.stats.total.toLocaleString()} blocks. ${r.complete?'Block selection is complete.':'Selection has missing data or metadata issues.'}`);}return r;}
+  $('close-build').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{++plannerEpoch;++sourceEpoch;++textureRequest;working=false;textureLoading=false;window.transferBusy=false;spectator?.setActive(false);});dialog.addEventListener('cancel',e=>{if(working||textureLoading)e.preventDefault();});
+  async function scanSource(){
+    const epoch=plannerEpoch,scan=++sourceEpoch,request={root:sourceWorld?.root,dimension:$('build-source-dimension').value,bounds:readBounds()};clearSourceDisplay();
+    await framingReady;if(epoch!==plannerEpoch||scan!==sourceEpoch||!dialog.open)return;
+    try{const limit=framing.previewLimitMessage(request.bounds);if(limit)throw new Error(limit);}
+    catch(error){status(error.message,true);$('build-summary').textContent='No block preview loaded for these bounds.';return;}
+    Object.assign(dialog.dataset,{requestedDimension:request.dimension,requestedBounds:JSON.stringify(request.bounds)});
+    const r=await run(()=>api.captureBuild({dimension:request.dimension,bounds:request.bounds}),'Scanning the requested source volume…',{isCurrent:()=>scan===sourceEpoch});
+    const current={root:sourceWorld?.root,dimension:$('build-source-dimension').value,bounds:readBounds()};
+    if(epoch!==plannerEpoch||scan!==sourceEpoch||!dialog.open||!framing.matchingPreviewRequest(request,current))return;
+    if(r&&!framing.matchingPreview(r,request)){clearSourceDisplay();status('The returned scan belongs to a different world, dimension or selection. Scan again; no mismatched area is displayed.',true);return;}
+    if(r){showSource(r);status(`Read ${r.stats.total.toLocaleString()} blocks. ${r.complete?'Block selection is complete.':'Selection has missing data or metadata issues.'} ${framing.previewLocationText(r.dimension,r.bounds)}`);}return r;
+  }
   $('build-capture').onclick=scanSource;
   $('build-open-destination').onclick=async()=>{
     const r=await run(()=>api.openDestination(),'Choose a destination world…');
@@ -155,7 +173,7 @@
   $('build-layer').onchange=changeLayer;$('build-view-mode').onchange=()=>{controls();updateSpectator();geometry=null;camera={zoom:1,x:0,y:0};render();};
   $('build-y').oninput=$('build-z').oninput=()=>{updateSpectator();geometry=null;render();};
   $('build-fit').onclick=()=>{spectator?.fit();camera={zoom:1,x:0,y:0};render();};
-  api.onProgress(p=>{if(working)status(`${p.phase}${p.file?' · '+p.file:''}`);});
+  api.onProgress(p=>{if(working&&progressCurrent())status(`${p.phase}${p.file?' · '+p.file:''}`);});
 
 
 
@@ -169,21 +187,21 @@
   function textureNote(message,error=false){$('texture-note').textContent=message;$('texture-note').classList.toggle('error',error);}
   async function loadPreviewTextures(force=false){
     if(!spectator||!displayed)return;
-    const volume=displayed,key=volume.version+JSON.stringify(volume.palette);
+    const epoch=plannerEpoch,volume=displayed,key=volume.version+JSON.stringify(volume.palette);
     if(!$('use-textures').checked){++textureRequest;await spectator.setTextures(null);textureKey='';updateSpectator();textureNote('Block colors. Turn on textures for a more recognizable 3D preview.');return;}
     if(textureLoading)return;
     if(!force&&textureKey===key)return;
     const request=++textureRequest;textureLoading=true;controls();textureNote('Loading block textures…');
     try{
       const response=await api.loadTextures({palette:volume.palette,version:volume.version});if(response.error)throw new Error(response.error.message);const bundle=response.result;
-      if(request!==textureRequest)return;
+      if(request!==textureRequest||epoch!==plannerEpoch||volume!==displayed)return;
       if(bundle.unavailable){await spectator.setTextures(null);updateSpectator();textureNote(bundle.message);return;}
-      const atlas=await spectator.setTextures(bundle,volume.palette);textureKey=key;updateSpectator();
+      const atlas=await spectator.setTextures(bundle,volume.palette);if(request!==textureRequest||epoch!==plannerEpoch||volume!==displayed)return;textureKey=key;updateSpectator();
       const missing=volume.palette.filter(s=>s&&!air(s)).length-bundle.texturedStates;
       textureNote(`${atlas.count} texture${atlas.count===1?'':'s'} · ${bundle.label}${bundle.version&&bundle.version!==bundle.worldVersion?` (world ${bundle.worldVersion})`:''}${missing?` · ${missing} block states use colors`:''}. ${bundle.models?.filter(Boolean).length??0} modeled states; other shapes use cubes.${bundle.models?.some(m=>m?.weighted)?' Random variants use the first model.':''} Approximate biome colors.`,bundle.warnings.length>0||atlas.failures.length>0);
       $('texture-note').title=[...bundle.warnings,...atlas.failures].join('\n');
-    }catch(e){textureKey='';await spectator.setTextures(null);updateSpectator();textureNote(`Textures unavailable: ${e.message} Block colors remain usable.`,true);}
-    finally{textureLoading=false;controls();}
+    }catch(e){if(request===textureRequest&&epoch===plannerEpoch&&volume===displayed){textureKey='';await spectator.setTextures(null);updateSpectator();textureNote(`Textures unavailable: ${e.message} Block colors remain usable.`,true);}}
+    finally{if(epoch===plannerEpoch){textureLoading=false;controls();if(displayed&&volume!==displayed)loadPreviewTextures();}}
   }
   $('use-textures').onchange=()=>loadPreviewTextures(true);
   $('choose-textures').onclick=async()=>{const r=await run(()=>api.chooseTextures(),'Choose a Minecraft client JAR or a resource-pack ZIP…');if(r){textureKey='';await loadPreviewTextures(true);status('Texture source changed. World files remain unchanged.');}else if(r===null)status('Texture selection canceled.');};

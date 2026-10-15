@@ -22,7 +22,7 @@ TLS certificate checks and every redirect remain enforced. Only GitHub API/relea
 
 ## Installation and persistent data
 
-On macOS, install the complete app bundle in `~/Applications/WorldRenew.app` or an appropriate Applications folder. Finish operations and quit the installed copy before manually replacing it. Keep its previous bundle as a recoverable backup. `scripts/install-macos.mjs` is an explicit local helper: it verifies the staged bundle, refuses an active installed process or a downgrade, retains any old bundle under `~/Applications/WorldRenew Backups`, and replaces only app code. It is never called by the updater.
+On macOS, install the complete app bundle in `~/Applications/WorldRenew.app` or an appropriate Applications folder. Finish operations and quit the installed copy before manually replacing it. Keep its previous bundle as a recoverable backup. `scripts/install-macos.mjs` is an explicit local helper: it verifies the staged bundle, refuses an active installed process or a downgrade, retains any old bundle under `~/Applications/.WorldRenew Backups.noindex`, and replaces only app code. Hidden non-indexed backup/test folders keep old bundles out of app search; only the helper's old and new bundle registrations are changed. It is never called by the updater.
 
 The Windows installer remains per-user, does not auto-launch, and retains app data. Native Windows upgrade execution still requires validation on Windows. A portable executable is not a persistent installation.
 

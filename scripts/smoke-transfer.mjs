@@ -16,9 +16,9 @@ const before={...hashes(source),...hashes(destination)};
 const env={...process.env,WORLDRENEW_USER_DATA:path.join(work,'app-data')};delete env.ELECTRON_RUN_AS_NODE;
 const executablePath=process.env.WORLDRENEW_EXECUTABLE;
 const app=await electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:[root]),`--world=${source}`],env,timeout:30000});
-const errors=[];
+const errors=[];let page;
 try{
- const page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='warning'&&m.text().includes('THREE.Color'))errors.push(m.text());});
+ page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='warning'&&m.text().includes('THREE.Color'))errors.push(m.text());});
  await page.click('#open');await page.waitForFunction(()=>document.getElementById('world-name').textContent.includes('Build transfer'));
  await page.click('#open-transfer');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Read '));
  assert.equal(await page.isVisible('#source-pane'),true);assert.equal(await page.isVisible('#destination-pane'),false);
@@ -70,4 +70,4 @@ try{
  await page.fill('#build-maxY','1');await page.click('#build-capture');await page.waitForFunction(()=>document.getElementById('build-status').classList.contains('error'));assert.equal(await page.isDisabled('#build-selection-save'),true);assert.equal(await page.isDisabled('#build-save'),true);assert.equal(await page.inputValue('#build-layer'),'source');
  assert.deepEqual({...hashes(source),...hashes(destination)},before);assert.deepEqual(errors,[]);
  console.log(`PASS: 3D mesh, no-clip camera, block picking, external selection library/reload, destination pick/nudge, conflict preview/report, dimensions, Nether roof/portal warnings, unchanged saves.\nScreenshots: ${work}`);
-}finally{await app.close();}
+}catch(error){if(page){console.error('Transfer status:',await page.textContent('#build-status').catch(()=>''));console.error('Renderer errors:',errors);await page.screenshot({path:path.join(work,'failure.png')}).catch(()=>{});}console.error('Evidence:',work);throw error;}finally{await app.close();}

@@ -14,14 +14,17 @@ if (!['win32', 'darwin', 'linux'].includes(options.platform) || !['x64', 'arm64'
 // Only application runtime inputs enter the bundle. Test worlds, credentials,
 // worktree metadata, CI files, build tools and previous artifacts are excluded.
 const runtime = /^\/(?:desktop|engine|ui|updates|node_modules)(?:\/|$)|^\/(?:package(?:-lock)?\.json|README\.md|UPDATES\.md)$/;
-fs.mkdirSync(path.join(root, 'work'), { recursive: true });
-const temporary = fs.mkdtempSync(path.join(root, 'work/packager-'));
+// Keep extracted development apps out of macOS app search. Distributable ZIPs
+// remain in artifacts; the installed app keeps its normal Applications path.
+const staging = path.join(root, 'work/.packager.noindex');
+fs.mkdirSync(staging, { recursive: true });
+const temporary = fs.mkdtempSync(path.join(staging, 'run-'));
 try {
 const results = await packager({
   tmpdir: temporary,
   dir: root,
   name: 'WorldRenew',
-  out: path.join(root, 'dist'),
+  out: path.join(root, options.platform === 'darwin' ? 'dist/.macos-apps.noindex' : 'dist'),
   ...options,
   overwrite: true,
   asar: true,

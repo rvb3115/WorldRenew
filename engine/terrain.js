@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { createChunkReader, decodeSection, isAir } from './chunks.js';
 import { canonicalWorld, readBounded, safePath } from './paths.js';
 import { requireThat } from './errors.js';
@@ -49,24 +50,45 @@ export function projectTerrain(nbt, options, dimensionId) {
   for (let sy = Math.floor(options.minY / 16); sy <= Math.floor(options.maxY / 16); sy++)
     requireThat(sections.get(sy), 'TERRAIN_SECTION_MISSING', `Section Y ${sy} is missing block data. Unknown terrain is not air.`);
   const top = new Int16Array(256).fill(-32768), ids = new Uint16Array(256), palette = [''], paletteIds = new Map();
-  let fallbackColumns = 0;
-  for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
-    let airRun = 0;
-    for (let y = options.maxY; y >= options.minY; y--) {
-      const s = sections.get(Math.floor(y / 16)), state = s.palette[s.indices[((y % 16 + 16) % 16) * 256 + z * 16 + x]];
-      if (isAir(state)) { airRun++; continue; }
-      if (options.mode === 'caverns' && airRun < 3) { airRun = 0; continue; }
-      const i = z * 16 + x;
-      top[i] = y;
-      if (!paletteIds.has(state.Name)) { paletteIds.set(state.Name, palette.length); palette.push(state.Name); }
-      ids[i] = paletteIds.get(state.Name);
-      if (terrainColor(state.Name).approximate) fallbackColumns++;
-      break;
+  const names = new Array(256), airRuns = new Uint16Array(256), caverns = options.mode === 'caverns';
+  let remaining = 256;
+  // Validation above finishes before projection can stop at a visible surface.
+  // A proven uniform air section can be skipped at once; uniform solid sections
+  // cannot contain a hidden cavern. Mixed sections still inspect exact indices.
+  for (let sy = Math.floor(options.maxY / 16); sy >= Math.floor(options.minY / 16) && remaining; sy--) {
+    const s = sections.get(sy), hi = Math.min(options.maxY, sy * 16 + 15), lo = Math.max(options.minY, sy * 16);
+    const uniform = s.palette.length === 1, air = s.palette.map(isAir);
+    if (uniform && air[0]) {
+      if (caverns) for (let i = 0; i < 256; i++) if (!names[i]) airRuns[i] += hi - lo + 1;
+      continue;
     }
+    for (let i = 0; i < 256; i++) {
+      if (names[i]) continue;
+      if (uniform) {
+        if (!caverns || airRuns[i] >= 3) { top[i] = hi; names[i] = s.palette[0].Name; remaining--; }
+        else airRuns[i] = 0;
+        continue;
+      }
+      for (let y = hi, at = (hi - sy * 16) * 256 + i; y >= lo; y--, at -= 256) {
+        const id = s.indices[at];
+        if (air[id]) { if (caverns) airRuns[i]++; continue; }
+        if (caverns && airRuns[i] < 3) { airRuns[i] = 0; continue; }
+        top[i] = y; names[i] = s.palette[id].Name; remaining--; break;
+      }
+    }
+  }
+  let fallbackColumns = 0;
+  const colors = [terrainColor('')];
+  // Retain row-major palette order and identical pixels across the fast path.
+  for (let i = 0; i < 256; i++) if (names[i]) {
+    const name = names[i];
+    if (!paletteIds.has(name)) { paletteIds.set(name, palette.length); palette.push(name); colors.push(terrainColor(name)); }
+    ids[i] = paletteIds.get(name);
+    if (colors[ids[i]].approximate) fallbackColumns++;
   }
   const rgba = new Uint8ClampedArray(1024);
   for (let i = 0; i < 256; i++) {
-    const { rgb } = terrainColor(palette[ids[i]]);
+    const { rgb } = colors[ids[i]];
     // North-facing relief and absolute elevation; deterministic at chunk boundaries.
     const north = i >= 16 && ids[i - 16] ? top[i - 16] : top[i];
     const shade = Math.max(.65, Math.min(1.2, .93 + (top[i] - north) * .035 + (top[i] - 64) * .0006));
@@ -83,7 +105,7 @@ export function createTerrainReader(world, { cacheLimit = TERRAIN_CACHE_LIMIT, c
   const root = canonicalWorld(world.root), cache = new Map(), regionCache = new Map();
   const disk = cacheDirectory ? new TerrainDiskCache(cacheDirectory, world) : null;
   const documents = new Map(), regionIndexes = new Map(world.dimensions.map(d => [d.key, new Map((d.regions??[]).map(r=>[`${r.rx},${r.rz}`,r]))]));
-  const metrics = { decoded: 0, readAttempts: 0, memoryHits: 0, diskHits: 0 };
+  const metrics = { decoded: 0, readAttempts: 0, memoryHits: 0, diskHits: 0, readMs: 0, projectMs: 0 };
   const stamp = relative => {
     try { const s = fs.statSync(safePath(root, relative)); return `${s.size}:${s.mtimeMs}:${s.ctimeMs}:${s.ino}`; }
     catch (error) { if (error.code === 'ENOENT') return 'absent'; throw error; }
@@ -147,11 +169,22 @@ export function createTerrainReader(world, { cacheLimit = TERRAIN_CACHE_LIMIT, c
         // Per-chunk reader releases expanded NBT immediately after projection. Its 32 MiB
         // record and 128 MiB expansion guards remain intact; no raw data enters the LRU.
         metrics.readAttempts++;
-        const reader = createChunkReader(root, dimension, {regionCache}), chunk = reader.read(x, z);
-        for (const region of reader.regions.values()) requireThat(!region?.issues.length, 'CHUNK_ALLOCATION', 'Region has structural errors; absence cannot be established.');
-        value = chunk ? projectTerrain(chunk.nbt, options, dimension.id) : { status: 'absent', message: 'No saved chunk record.' };
-        reader.verifyStable();
-        requireThat(storageStamp === stamp(region) + '|' + stamp(external), 'CHUNK_CHANGED', 'Terrain changed while loading. Refresh the map.');
+        const reader = createChunkReader(root, dimension, {regionCache}); let chunk;
+        let start = performance.now();
+        try {
+          chunk = reader.read(x, z);
+          for (const region of reader.regions.values()) requireThat(!region?.issues.length, 'CHUNK_ALLOCATION', 'Region has structural errors; absence cannot be established.');
+        } finally { metrics.readMs += performance.now() - start; }
+        if (chunk) {
+          start = performance.now();
+          try { value = projectTerrain(chunk.nbt, options, dimension.id); }
+          finally { metrics.projectMs += performance.now() - start; }
+        } else value = { status: 'absent', message: 'No saved chunk record.' };
+        start = performance.now();
+        try {
+          reader.verifyStable();
+          requireThat(storageStamp === stamp(region) + '|' + stamp(external), 'CHUNK_CHANGED', 'Terrain changed while loading. Refresh the map.');
+        } finally { metrics.readMs += performance.now() - start; }
         metrics.decoded++;
         }
       } catch (error) { value = { status: error.code === 'TERRAIN_UNSUPPORTED' ? 'unsupported' : 'unreadable', code: error.code ?? 'IO_ERROR', message: error.message }; }

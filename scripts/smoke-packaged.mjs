@@ -11,8 +11,9 @@ import { makeWorld } from '../tests/fixtures.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (!['darwin', 'win32'].includes(process.platform)) throw new Error('Run packaged smoke tests on macOS arm64 or Windows x64.');
 assert.equal(process.arch, process.platform === 'darwin' ? 'arm64' : 'x64', 'Use a native runner for the distributed target.');
-fs.mkdirSync(path.join(root, 'work'), { recursive: true });
-const work = fs.mkdtempSync(path.join(root, 'work/packaged-smoke-'));
+const staging = path.join(root, 'work/.packaged-smoke.noindex');
+fs.mkdirSync(staging, { recursive: true });
+const work = fs.mkdtempSync(path.join(staging, 'run-'));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const target = process.platform === 'darwin' ? 'macos-arm64' : 'windows-x64';
 const artifactDir = path.join(root, 'artifacts', target);
@@ -28,6 +29,7 @@ function run(command, args, extraEnv = {}) {
   assert.equal(result.status, 0, `Smoke command failed: ${command} ${args.join(' ')}`);
 }
 let executable;
+try {
 if (process.platform === 'darwin') {
   run('/usr/bin/ditto', ['-x', '-k', artifact, work]);
   executable = path.join(work, 'WorldRenew.app/Contents/MacOS/WorldRenew');
@@ -43,6 +45,7 @@ run(process.execPath, ['scripts/smoke-topographic.mjs'], { WORLDRENEW_EXECUTABLE
 run(process.execPath, ['scripts/smoke-preservation.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-updates.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-terrain-cache.mjs'], { WORLDRENEW_EXECUTABLE: executable });
+run(process.execPath, ['scripts/smoke-preview-location.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 const checks = ['container/entity removal blocks export', 'topographic rendering, picking and bounded geometry', '1.21.11 legacy terrain fixture', 'artifact SHA-256', 'packaged desktop/preservation/export', '3D transfer and Nether roof preview', 'build archive, air-mode review and isolated-copy workflow', 'bounded detailed terrain in all vanilla dimensions', 'portable local template library'];
 if (process.platform === 'win32') {
   // Exercise the final single-file portable launcher as well, without changing app code.
@@ -90,7 +93,20 @@ if (process.platform === 'win32') {
   }
 } else checks.push('distributed ZIP extracts with valid ad-hoc seal, arm64 binary, executable modes and working bundle');
 checks.push('Complete overview, persistent cache, cold/warm native opens and dimension camera/selection retention');
+checks.push('Exact selected-area 3D framing, negative coordinates, dimension identity and stale-response rejection');
 checks.push('GitHub update preferences, checksum staging and reveal without executing a package');
 const report = { passed: true, target, version: pkg.version, artifact: metadata.file, sha256: metadata.sha256, checkedAt: new Date().toISOString(), checks, originalWorldsUsed: false, gameLoadTested: false };
 fs.writeFileSync(path.join(artifactDir, 'smoke-results.json'), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify(report, null, 2));
+
+} finally {
+  // Launching a test bundle can register it even in a non-indexed folder.
+  // Unregister only this run's extracted bundle; never reset the app registry.
+  if (process.platform === 'darwin') {
+    const app = path.join(work, 'WorldRenew.app');
+    if (fs.existsSync(app)) {
+      const result = spawnSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-u', app], { encoding: 'utf8' });
+      if (result.status !== 0) console.warn(`Could not unregister test app ${app}: ${result.stderr || result.error || result.status}`);
+    }
+  }
+}
