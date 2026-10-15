@@ -146,3 +146,18 @@ test('capture exceeds the old 128 MiB cumulative reader budget with bounded per-
   assert.equal(result.summary.chunks, 10); assert.equal(result.summary.selectedBlocks, '10'); assert.ok(BigInt(result.summary.rawBytes) > 128n * 1024n * 1024n);
   assert.ok(fs.statSync(f.file).size < 256 * 1024, 'Highly repetitive unknown fields remain lossless and compress well.');
 });
+
+test('multi-chunk capture selects more than the legacy million-block and extent caps', t => {
+  const f = setup(t), selection = new SparseSelection();
+  const sections = Array.from({ length: 24 }, (_, i) => sectionFixture(i - 4, () => state('stone')));
+  for (let i = 0; i < 12; i++) {
+    const x = i * 32;
+    writeRecord(f.root, 'region', x, nbt({ ...emptyRecordTags(x, 0), sections: [9, { type: 10, values: sections }] }));
+    selection.addBox({ minX: x * 16, maxX: x * 16 + 15, minY: -64, maxY: 319, minZ: 0, maxZ: 15 });
+  }
+  const captured = captureTemplateStream(f.file, f.world, f.dimension.key, selection);
+  assert.equal(captured.summary.chunks, 12);
+  assert.equal(captured.summary.selectedBlocks, '1179648');
+  assert.equal(captured.summary.nonAir, captured.summary.selectedBlocks);
+  assert.equal(captured.header.source.bounds.maxX, 5647);
+});

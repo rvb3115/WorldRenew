@@ -102,3 +102,10 @@ test('low-level publication detects tempfile mutation and replacement after vali
     assert.deepEqual(fs.readdirSync(dir), []);
   }
 });
+
+test('writer returns persisted header metadata even if caller changes its input in a hook', t => {
+  const dir = setup(t), file = path.join(dir, 'header.wrbuild'), header = streamHeader();
+  const saved = writeTemplateStream(file, header, [streamChunk()], { beforePublish() { header.futureHeader.value = false; } });
+  assert.equal(saved.header.futureHeader.value, true);
+  assert.deepEqual(saved.header, validateTemplateStream(file).header);
+});

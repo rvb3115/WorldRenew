@@ -171,7 +171,7 @@ export function writeTemplateStream(file, header, chunks, options = {}) {
     const unchanged = stat => stat?.isFile() && ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].every(k => stat[k] === savedIdentity[k]);
     requireThat(unchanged(savedDescriptor) && unchanged(savedPath), 'TEMPLATE_CHANGED', 'Verified template changed before publication.');
     fs.linkSync(temporary, target);
-    return { file: target, header, summary: checked.summary, digest };
+    return { file: target, header: checked.header, summary: checked.summary, digest };
   } finally { fs.closeSync(fd); try { fs.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
 }
 
