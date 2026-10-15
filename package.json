@@ -26,7 +26,8 @@
     "build:test:macos": "node scripts/test-build.mjs macos-arm64",
     "build:test:windows": "node scripts/test-build.mjs windows-x64",
     "test:packaged": "node scripts/smoke-packaged.mjs",
-    "test:terrain": "node scripts/smoke-terrain.mjs"
+    "test:terrain": "node scripts/smoke-terrain.mjs",
+    "test:templates": "node scripts/smoke-templates.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

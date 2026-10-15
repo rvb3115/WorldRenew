@@ -59,6 +59,9 @@ app.whenReady().then(async () => {
     try { return { result: await action(value) }; }
     catch (error) { return { error: { message: error.message } }; }
   });
+  const templates = path.join(app.getPath('userData'), 'templates');
+  const openWorldRoots = () => [current?.root, destination?.root].filter(Boolean);
+  const usePortable = result => { portableBuild = { file: result.file, digest: result.digest }; portableReview = null; return result; };
   const projects = path.join(app.getPath('userData'), 'projects');
   const inspect = async folder => {
     const report = await runWorker({ action: 'inspect', folder });
@@ -126,15 +129,41 @@ app.whenReady().then(async () => {
     if (choice.canceled) return null;
     return runWorker({ action: 'copy', folder: current.root, parent: choice.filePaths[0], options: { confirmedClosed: true } });
   });
+  handle('templates:list', options => runWorker({ action: 'template-list', directory: templates, options, worlds: openWorldRoots() }));
+  handle('templates:folder', async () => {
+    const { ensureTemplateDirectory } = await import('../engine/template-library.js');
+    const directory = ensureTemplateDirectory(templates, openWorldRoots());
+    const error = await shell.openPath(directory); if (error) throw new Error(error); return { directory };
+  });
+  const importTemplateFile = async file => runWorker({ action: 'template-import', directory: templates, file, worlds: openWorldRoots() });
+  const chooseTemplate = async () => {
+    const choice = await dialog.showOpenDialog(win, { title: 'Import a portable template to this device', properties: ['openFile'], filters: [{ name: 'WorldRenew template', extensions: ['wrbuild'] }] });
+    return choice.canceled ? null : choice.filePaths[0];
+  };
+  handle('templates:import', async () => { const file = await chooseTemplate(); return file ? importTemplateFile(file) : null; });
+  handle('templates:drop', file => importTemplateFile(file));
+  handle('templates:open', async id => usePortable(await runWorker({ action: 'template-open', directory: templates, id })));
+  handle('templates:save', async name => {
+    if (!current || !capturedBuild?.complete) throw new Error('Load a complete selection first.');
+    return usePortable(await runWorker({ action: 'template-save', directory: templates, name, world: current, dimension: capturedBuild.dimension, bounds: capturedBuild.bounds, expectedDigest: capturedBuild.digest, worlds: openWorldRoots() }));
+  });
+  handle('templates:export', async id => {
+    let source;
+    if (id !== null) { const { templatePath } = await import('../engine/template-library.js'); source = templatePath(templates, id); }
+    else { if (!portableBuild) throw new Error('Open a template first.'); source = portableBuild.file; }
+    const choice = await dialog.showSaveDialog(win, { title: 'Export a template for another device', defaultPath: path.join(app.getPath('downloads'), path.basename(source)), filters: [{ name: 'WorldRenew template', extensions: ['wrbuild'] }] });
+    if (choice.canceled) return null;
+    return runWorker({ action: 'template-export', file: source, destination: choice.filePath, worlds: openWorldRoots() });
+  });
   handle('archive:save',async()=>{
     if(!current||!capturedBuild?.complete)throw new Error('Load a complete selection first.');
     const choice=await dialog.showSaveDialog(win,{title:'Save portable build outside Minecraft saves',defaultPath:'My-build.wrbuild',filters:[{name:'WorldRenew build',extensions:['wrbuild']}]});if(choice.canceled)return null;
     const result=await runWorker({action:'archive-save',file:choice.filePath,world:current,dimension:capturedBuild.dimension,bounds:capturedBuild.bounds,expectedDigest:capturedBuild.digest,worlds:[current.root,...(destination?[destination.root]:[])]});
-    portableBuild={file:result.file,digest:result.digest};portableReview=null;return result;
+    const local = await importTemplateFile(result.file);
+    usePortable(local); return { ...local, exportedFile: result.file };
   });
-  handle('archive:open',async()=>{
-    const choice=await dialog.showOpenDialog(win,{title:'Open portable build',properties:['openFile'],filters:[{name:'WorldRenew build',extensions:['wrbuild']}]});if(choice.canceled)return null;
-    const result=await runWorker({action:'archive-open',file:choice.filePaths[0]});portableBuild={file:result.file,digest:result.digest};portableReview=null;return result;
+  handle('archive:open', async () => {
+    const file = await chooseTemplate(); return file ? usePortable(await importTemplateFile(file)) : null;
   });
   handle('archive:preview',async data=>{
     if(!portableBuild||!destination)throw new Error('Open a portable build and destination first.');portableReview=null;

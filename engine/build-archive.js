@@ -75,11 +75,15 @@ export function validateBuildArchive(archive){
 export function encodeBuild(archive){
   validateBuildArchive(archive);const json=Buffer.from(JSON.stringify(archive));requireThat(json.length<=MAX_JSON,'ARCHIVE_SIZE','Build archive exceeds the expanded limit.');const bytes=Buffer.concat([MAGIC,Buffer.from(sha(json),'hex'),gzipSync(json)]);requireThat(bytes.length<=MAX_FILE,'ARCHIVE_SIZE','Build archive exceeds 64 MiB.');return bytes;
 }
-export function readBuildFile(file){
-  const bytes=readBounded(path.dirname(path.resolve(file)),path.basename(file),MAX_FILE);requireThat(bytes.subarray(0,MAGIC.length).equals(MAGIC),'ARCHIVE_FORMAT','This is not a WorldRenew build file.');
+export function decodeBuildBytes(bytes){
+  requireThat(Buffer.isBuffer(bytes)&&bytes.length<=MAX_FILE,'ARCHIVE_SIZE','Build archive exceeds 64 MiB.');
+  requireThat(bytes.subarray(0,MAGIC.length).equals(MAGIC),'ARCHIVE_FORMAT','This is not a WorldRenew build file.');
   let json;try{json=gunzipSync(bytes.subarray(MAGIC.length+32),{maxOutputLength:MAX_JSON});}catch{throw Error('Damaged or oversized build archive.');}
   requireThat(sha(json)===bytes.subarray(MAGIC.length,MAGIC.length+32).toString('hex'),'ARCHIVE_CHECKSUM','Build archive checksum failed.');const archive=JSON.parse(json.toString('utf8'));
   return {archive,...validateBuildArchive(archive),digest:sha(bytes)};
+}
+export function readBuildFile(file){
+  return decodeBuildBytes(readBounded(path.dirname(path.resolve(file)),path.basename(file),MAX_FILE));
 }
 export function saveBuildFile(file,archive,worlds=[]){
   const parent=externalParent(path.dirname(path.resolve(file)),worlds),target=path.join(parent,path.basename(file));requireThat(!fs.existsSync(target),'ARCHIVE_EXISTS','Choose a new filename; existing build files are not overwritten.');

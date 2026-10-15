@@ -22,6 +22,10 @@
     $('build-view-destination').disabled=locked||!destinationWorld;
     for(const id of ['build-height','build-library','build-pick'])$(id).disabled=locked;
     for(const b of document.querySelectorAll('.build-nudges button'))b.disabled=locked||!destinationWorld;
+    $('build-template-save').disabled=locked||!!portable||!scanMatches||!captured?.complete;
+    $('build-template-name').disabled=locked||!!portable;
+    $('build-template-export').hidden=!portable; $('build-template-export').disabled=locked;
+    $('build-template-save').hidden=!!portable;
     $('build-archive-save').disabled=locked||!!portable||!scanMatches||!captured?.complete;
     for(const id of ['build-capture','build-source-dimension','build-bounds','build-height','pick-corners','build-selection-save','build-selection-load'])if(portable)$(id).disabled=true;
     $('selection-library').hidden=!!portable;$('build-archive-save').hidden=!!portable;$('pick-corners').hidden=!!portable;$('build-capture').hidden=!!portable;
@@ -95,6 +99,19 @@
   };
   window.openPortableBuild=async archive=>{const v=archive.volume;await window.openTransferPlanner({archive,world:{metadata:{name:archive.summary.name,version:v.version,dataVersion:v.dataVersion},dimensions:[{key:v.dimension,id:archive.summary.dimension}]},dimension:v.dimension});};
   $('build-archive-save').onclick=async()=>{const r=await run(()=>api.saveBuildArchive(),'Saving frozen blocks and supporting chunk records…');if(r){portable=r;for(const[k,v]of Object.entries(r.volume.bounds))$(`build-${k}`).value=v;showSource(r.volume);$('portable-summary').textContent=`Saved portable build: ${r.file}. Source world is no longer needed. Full supporting chunks include surrounding data.`;findText([r.summary.coverage,`${r.summary.blockEntities} block entities, ${r.summary.entities} entity groups and ${r.summary.ticks} scheduled updates preserved. Their relocation may be blocked.`]);status('Portable build saved and verified. Choose a destination to review it.');}else if(r===null)status('Build save canceled.');};
+  $('build-template-save').onclick = async () => {
+    const r = await run(() => api.saveTemplate($('build-template-name').value), 'Saving a verified template on this device…');
+    if (!r) return;
+    portable = r; showSource(r.volume);
+    $('portable-summary').textContent = `Saved locally: ${r.file}. Use Templates → Open Templates Folder to find it, or Export to copy it to another device.`;
+    findText([r.summary.coverage, 'The template is independent of the source world. Existing templates were not overwritten.']);
+    status('Template saved locally and verified. Export the .wrbuild file to move it to another device.');
+  };
+  $('build-template-export').onclick = async () => {
+    const result = await run(() => api.exportTemplate(null), 'Choose where to export the template…');
+    if (result) status(`Template exported: ${result.file}. Import this file on another device.`);
+    else if (result === null) status('Template export canceled.');
+  };
   $('reveal-placement').onclick=()=>run(()=>api.revealPlacedCopy(),'Showing the created test world…');
   $('placement-closed').onchange=controls;
   $('build-place-copy').onclick=async()=>{if(!preview?.copyEligible)return;const r=await run(()=>api.createPlacedCopy({confirmedClosed:$('placement-closed').checked,reviewDigest:preview.reviewDigest}),'Creating a verified backup and separate test world…');if(r){$('placement-result').textContent=`Created ${r.blocks.toLocaleString()} selected blocks in a separate test world. Backup and validation report are in the same output folder.`;$('placement-result').title=`World: ${r.world}\nBackup: ${r.backup}\nValidation report: ${r.report}`;$('reveal-placement').hidden=false;preview=null;$('placement-closed').checked=false;controls();status('Test world copy created and validated. Original world and backup are unchanged. Test the copied world in Minecraft before relying on it.');}else if(r===null)status('Copy destination selection canceled.');};

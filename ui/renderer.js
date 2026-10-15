@@ -14,7 +14,7 @@ const fmt = value => value.toLocaleString();
 function status(message, error = false) { $('status').textContent = message; $('status').title = message; document.querySelector('.statusbar').classList.toggle('error', error); }
 function setBusy(value) {
   busy = value; document.body.classList.toggle('busy', value);
-  $('open-build-file').disabled=value;
+  $('open-build-file').disabled=$('templates-open').disabled=value;
   $('open').disabled = $('open-empty').disabled = value;
   $('open-transfer').disabled = value || !world;
   for (const id of ['rescan', 'dimension', 'fit', 'zoom-in', 'zoom-out', 'selection-fields', 'save', 'terrain-mode', 'map-jump', 'fit-selection']) $(id).disabled = value || !world;
@@ -291,7 +291,7 @@ $('copy').onclick = async () => {
   if (result) status(`Verified ${fmt(result.files)} files. Copy: ${result.world}`); else if (result === null) status('Copy canceled.');
 };
 api.onProgress(progress => { if (busy) status(`${progress.phase}${progress.file ? ` · ${progress.file}` : ''}${progress.total ? ` (${progress.completed}/${progress.total})` : ''}`); });
-window.addEventListener('beforeunload', event => { if (dirty || busy || window.transferBusy) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty || busy || window.transferBusy || window.templateBusy) { event.preventDefault(); event.returnValue = ''; } });
 $('open-transfer').onclick = () => {
   const chosen = selectedChunks();
   let area = null;

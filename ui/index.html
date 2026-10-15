@@ -12,7 +12,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.5-test.1</span></div>
-    <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="open-build-file">Open build file</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
+    <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="templates-open">Templates</button><button id="open-build-file">Import template…</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
   </header>
   <main>
     <aside class="sidebar">
@@ -95,7 +95,7 @@
         <button id="pick-corners" class="primary full">Pick two corners in the preview</button><p>Include basements, roofs, and any floating sections.</p>
         <label class="build-field">Height preset<select id="build-height"><option value="full">Full dimension height</option><option value="roof">Nether roof · Y 128–255</option><option value="below">Nether below roof · Y 0–127</option><option value="custom">Custom height</option></select></label><p id="build-dimension-note">Each selection belongs to exactly one dimension.</p><details id="selection-coordinates" class="plain-details"><summary>Selection coordinates</summary><fieldset id="build-bounds"><legend>Inclusive selection corners</legend><div class="build-coordinate-grid"><label>From X<input id="build-minX" type="number" step="1"></label><label>From Y<input id="build-minY" type="number" step="1"></label><label>From Z<input id="build-minZ" type="number" step="1"></label><label>To X<input id="build-maxX" type="number" step="1"></label><label>To Y<input id="build-maxY" type="number" step="1"></label><label>To Z<input id="build-maxZ" type="number" step="1"></label></div></fieldset>
         </details><p class="air-policy">The box includes air. Placement review shows any destination terrain it would erase.</p>
-        <button id="build-capture" class="primary full">Load selected area</button><button id="build-archive-save" class="full" disabled>Save portable build…</button><p id="portable-summary">A portable build freezes blocks and air. It also contains nearby blocks, inventories and entities from the complete intersecting chunks.</p><details class="build-library" id="selection-library"><summary>Saved selections</summary><label class="build-field">Selection name<input id="build-selection-name" maxlength="80" placeholder="Basement + house, roof hub…"></label><button id="build-selection-save" class="full" disabled>Save selection</button><label class="build-field">Saved in this source world<select id="build-library"><option value="">No saved selections</option></select></label><button id="build-selection-load" class="full" disabled>Reload selection</button><p>Saved boundaries only. Reload reads the current source world.</p></details><button id="next-placement" class="primary full">Next: place build</button></div>
+        <button id="build-capture" class="primary full">Load selected area</button><label class="build-field">Template name<input id="build-template-name" maxlength="100" value="My build"></label><button id="build-template-save" class="full" disabled>Save to local templates</button><button id="build-archive-save" class="full" disabled>Save &amp; export build file…</button><button id="build-template-export" class="full" hidden>Export template…</button><p id="portable-summary">A portable build freezes blocks and air. It also contains nearby blocks, inventories and entities from the complete intersecting chunks.</p><details class="build-library" id="selection-library"><summary>Saved selections</summary><label class="build-field">Selection name<input id="build-selection-name" maxlength="80" placeholder="Basement + house, roof hub…"></label><button id="build-selection-save" class="full" disabled>Save selection</button><label class="build-field">Saved in this source world<select id="build-library"><option value="">No saved selections</option></select></label><button id="build-selection-load" class="full" disabled>Reload selection</button><p>Saved boundaries only. Reload reads the current source world.</p></details><button id="next-placement" class="primary full">Next: place build</button></div>
         <div id="destination-pane" role="tabpanel" aria-labelledby="step-destination" hidden>
         <button id="build-open-destination" class="full">Choose destination world</button><p id="build-destination-name">No destination selected.</p>
         <label class="build-field">Destination dimension<select id="build-destination-dimension" disabled></select></label>
@@ -106,6 +106,16 @@
     </div>
     <footer id="build-status" role="status" aria-live="polite">Read-only build planning. Neither world is modified.</footer>
   </dialog>
+  <dialog id="templates-dialog" aria-labelledby="templates-title">
+    <header class="build-header"><div><h2 id="templates-title">Your templates</h2><p>Saved on this device. Copy a .wrbuild file to another Windows PC or Mac, then import it there.</p></div><button id="templates-close" aria-label="Close templates">✕</button></header>
+    <div class="templates-body"><div class="templates-actions"><button id="templates-import" class="primary">Import .wrbuild…</button><button id="templates-folder">Open Templates Folder</button><button id="templates-refresh">Refresh</button></div>
+      <p id="templates-directory" class="path"></p><div id="templates-drop" tabindex="0">Drop one .wrbuild file here to import a local copy. You can also use Import above.</div>
+      <p>To save a build, open a world, load a complete selection in 3D, and choose Save to local templates. Files contain supporting chunk data, including nearby blocks and entities.</p>
+      <div id="templates-list" aria-label="Local templates"></div><div class="templates-pages"><button id="templates-previous">Previous</button><span id="templates-page"></span><button id="templates-next">Next</button></div>
+      <p class="small">Every import and open is validated. Names are made safe for Windows and Mac; duplicates receive a number. Existing files are never overwritten. No account or cloud sync is required.</p>
+    </div><footer id="templates-status" role="status" aria-live="polite">Local portable templates.</footer>
+  </dialog>
+  <script src="templates.js"></script>
   <script type="module" src="renderer.js"></script>
   <script src="transfer.js"></script>
   <script src="updates.js"></script>

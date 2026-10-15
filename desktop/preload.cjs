@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('worldrenew', Object.freeze({
   onUpdateStatus: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('updates:changed', listener); return () => ipcRenderer.removeListener('updates:changed', listener); },
   updateStatus: () => ipcRenderer.invoke('updates:status'),
@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('worldrenew', Object.freeze({
   createPlacedCopy: data => ipcRenderer.invoke('archive:place',data),
   chooseTextures: () => ipcRenderer.invoke('textures:choose'),
   loadTextures: palette => ipcRenderer.invoke('textures:load', palette),
+  listTemplates: options => ipcRenderer.invoke('templates:list', options),
+  openTemplatesFolder: () => ipcRenderer.invoke('templates:folder'),
+  importTemplate: () => ipcRenderer.invoke('templates:import'),
+  importDroppedTemplate: file => ipcRenderer.invoke('templates:drop', webUtils.getPathForFile(file)),
+  openTemplate: id => ipcRenderer.invoke('templates:open', id),
+  saveTemplate: name => ipcRenderer.invoke('templates:save', name),
+  exportTemplate: id => ipcRenderer.invoke('templates:export', id),
   terrainTiles: request => ipcRenderer.invoke('terrain:tiles', request),
   openWorld: () => ipcRenderer.invoke('world:open'),
   rescan: () => ipcRenderer.invoke('world:rescan'),

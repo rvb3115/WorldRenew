@@ -1,3 +1,4 @@
+import { importTemplate, saveTemplate, openTemplate, exportTemplate, listTemplates } from '../engine/template-library.js';
 import { createRegenerationReview, saveRegenerationReview } from '../engine/regeneration.js';
 import { createRegeneratedCopy } from '../engine/regeneration-export.js';
 import {captureBuildArchive,saveBuildFile,readBuildFile} from '../engine/build-archive.js';
@@ -13,6 +14,11 @@ const progress = value => { if (Date.now() - last > 100) { last = Date.now(); pa
 try {
   let result;
   switch (workerData.action) {
+    case 'template-list': result = listTemplates(workerData.directory, workerData.options, workerData.worlds); break;
+    case 'template-import': result = importTemplate(workerData.directory, workerData.file, workerData.worlds); break;
+    case 'template-open': result = openTemplate(workerData.directory, workerData.id); break;
+    case 'template-export': result = exportTemplate(workerData.file, workerData.destination, workerData.worlds); break;
+    case 'template-save': result = saveTemplate(workerData.directory, workerData.name, captureBuildArchive(workerData.world, workerData.dimension, workerData.bounds, progress, workerData.expectedDigest), workerData.worlds); break;
     case 'archive-save': result=saveBuildFile(workerData.file,captureBuildArchive(workerData.world,workerData.dimension,workerData.bounds,progress,workerData.expectedDigest),workerData.worlds);break;
     case 'archive-open': {const b=readBuildFile(workerData.file);result={file:workerData.file,digest:b.digest,volume:b.volume,summary:b.summary};break;}
     case 'archive-preview': result=previewBuildFile(workerData.file,workerData.destination,workerData.destinationDimension,workerData.anchor,progress,workerData.protection);break;
