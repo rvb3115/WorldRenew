@@ -17,7 +17,7 @@ function contentOf(review) {
   return { selection: review.selection, protection: review.protection, bufferChunks: review.bufferChunks,
     candidates: review.candidates, records: review.records, inputFiles: review.inputFiles,
     excludedProtected: review.excludedProtected, excludedBuffer: review.excludedBuffer,
-    playerSafety: review.playerSafety, copyExport: review.copyExport };
+    playerSafety: review.playerSafety, removalSafety: review.removalSafety, copyExport: review.copyExport };
 }
 function atomicJSON(file, value) {
   const temporary = `${file}.${randomUUID()}.tmp`;
@@ -127,7 +127,8 @@ export function createRegeneratedCopy(world, review, parent, { confirmedClosed =
       reviewDigest: fresh.reviewDigest, removedChunks: fresh.candidates, protectedChunks: fresh.protection,
       bufferChunks: fresh.bufferChunks, modifiedRegions: [...regions.keys()], removedSidecars: [...removed],
       unchangedFilesVerified: true, untouchedRegionBytesVerified: true, sourceAndBackupVerified: true,
-      playerSafety: fresh.playerSafety, playerFilesByteIdentical: true,
+      playerSafety: fresh.playerSafety, playerFilesByteIdentical: true, levelDatByteIdentical: true,
+      removalSafety: fresh.removalSafety, containerAndEntityRemovalBlocked: true,
       warnings: [...fresh.warnings, 'Experimental export: OS locking, crash recovery and Minecraft game-load certification remain pending. Keep Minecraft closed for the whole operation.']
     });
     journal('validated-test-copy'); fs.renameSync(stage, final);

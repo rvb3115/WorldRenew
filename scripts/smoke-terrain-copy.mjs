@@ -11,7 +11,8 @@ import { canonicalWorld, safePath, isWithin } from '../engine/paths.js';
 import { inspectWorld } from '../engine/world.js';
 import { createTerrainReader } from '../engine/terrain.js';
 
-assert.equal(process.argv.length, 3, 'Usage: node scripts/smoke-terrain-copy.mjs /path/to/source-world');
+assert.ok(process.argv.length === 3 || process.argv.length === 4 && process.argv[3] === '--topographic', 'Usage: node scripts/smoke-terrain-copy.mjs /path/to/source-world [--topographic]');
+const topographic = process.argv.includes('--topographic');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = canonicalWorld(process.argv[2]);
 assert.ok(!isWithin(source, root), 'Test output must be outside the source world.');
@@ -63,16 +64,25 @@ try {
   assert.equal(await page.textContent('#protected-count'), '9');
   await page.click('#toggle-protection');
   // Closing the panel resizes the map and reveals additional columns.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await page.waitForFunction(() => Number(document.getElementById('terrain-status').dataset.ready) > 0 && document.getElementById('terrain-status').dataset.pending === '0', null, { timeout: 60000 });
   const map = await page.locator('#map').boundingBox();
   await page.mouse.move(map.x + map.width / 2, map.y + map.height / 2);
   const hover = await page.textContent('#terrain-hover');
   assert.match(hover, /minecraft:/, 'The selected center must show a decoded block.');
   await page.screenshot({ path: path.join(work, 'real-world-terrain.png') });
+  let topographicMetrics = null;
+  if (topographic) {
+    await page.selectOption('#map-view','topographic');
+    await page.waitForFunction(()=>document.getElementById('topographic-map').dataset.building==='0' && document.getElementById('terrain-status').dataset.pending==='0',null,{timeout:60000});
+    topographicMetrics = await page.locator('#topographic-map').evaluate(el=>({...el.dataset}));
+    assert.ok(Number(topographicMetrics.meshes)<=121);assert.ok(Number(topographicMetrics.triangles)>0);
+    await page.screenshot({path:path.join(work,'real-world-topographic.png')});
+  }
   const terrain = await page.locator('#terrain-status').evaluate(element => ({ ...element.dataset, text: element.textContent }));
   assert.deepEqual(errors, []);
   verifySourceAndCopy();
-  const report = { passed: true, source, disposableCopy: copy, profile, executable: executablePath ?? 'development Electron', minecraftVersion: world.metadata.version, dataVersion: world.metadata.dataVersion, totalChunks: world.totals.chunks, sampledAnchor: { x: anchor.x, z: anchor.z }, terrain, hover, filesVerified: hashes.length, bytesVerified: bytes, sourceAndCopyUnchanged: true, installedProfileUsed: false, fixtureOnly: false, gameLoadTested: false, screenshots: work };
+  const report = { passed: true, topographicMetrics, source, disposableCopy: copy, profile, executable: executablePath ?? 'development Electron', minecraftVersion: world.metadata.version, dataVersion: world.metadata.dataVersion, totalChunks: world.totals.chunks, sampledAnchor: { x: anchor.x, z: anchor.z }, terrain, hover, filesVerified: hashes.length, bytesVerified: bytes, sourceAndCopyUnchanged: true, installedProfileUsed: false, fixtureOnly: false, gameLoadTested: false, screenshots: work };
   fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
 } finally { await app.close(); }

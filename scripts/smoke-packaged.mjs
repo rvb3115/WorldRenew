@@ -39,7 +39,9 @@ if (process.platform === 'darwin') {
 // Existing full workflows run on the extracted macOS bundle / Windows packaged app.
 for (const script of ['scripts/smoke-desktop.mjs', 'scripts/smoke-transfer.mjs', 'scripts/smoke-archive.mjs', 'scripts/smoke-terrain.mjs', 'scripts/smoke-templates.mjs']) run(process.execPath, [script], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-terrain.mjs', '--legacy-1.21.11'], { WORLDRENEW_EXECUTABLE: executable });
-const checks = ['1.21.11 legacy terrain fixture', 'artifact SHA-256', 'packaged desktop/preservation/export', '3D transfer and Nether roof preview', 'build archive, air-mode review and isolated-copy workflow', 'bounded detailed terrain in all vanilla dimensions', 'portable local template library'];
+run(process.execPath, ['scripts/smoke-topographic.mjs'], { WORLDRENEW_EXECUTABLE: executable });
+run(process.execPath, ['scripts/smoke-preservation.mjs'], { WORLDRENEW_EXECUTABLE: executable });
+const checks = ['container/entity removal blocks export', 'topographic rendering, picking and bounded geometry', '1.21.11 legacy terrain fixture', 'artifact SHA-256', 'packaged desktop/preservation/export', '3D transfer and Nether roof preview', 'build archive, air-mode review and isolated-copy workflow', 'bounded detailed terrain in all vanilla dimensions', 'portable local template library'];
 if (process.platform === 'win32') {
   // Exercise the final single-file portable launcher as well, without changing app code.
   const fixture = makeWorld(path.join(work, 'portable-fixture'), { demo: true, dataVersion: 5023 });

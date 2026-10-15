@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { makeWorld, writeRegion } from './fixtures.js';
+import { makeWorld, writeRegion, emptyRecordTags, nbt } from './fixtures.js';
+import { gzipSync, deflateSync } from 'node:zlib';
 import { inspectWorld } from '../engine/world.js';
 import { inspectRegion } from '../engine/anvil.js';
 import { createRegenerationReview } from '../engine/regeneration.js';
@@ -64,12 +65,13 @@ test('negative coordinates, cross-region selections and diagonal buffers preserv
   assert.equal(inspectRegion(result.world, 'dimensions/minecraft/the_nether/region/r.0.0.mca').present, 1);
 });
 
-for (const compression of [1, 2, 3, 4]) test(`external compression marker ${compression} removes matching sidecars in all stores, preserves unrelated sidecars`, t => {
+for (const compression of [1, 2, 3]) test(`verified empty external compression ${compression} removes matching sidecars and preserves unrelated sidecars`, t => {
   const f = setup(t);
   for (const store of ['region', 'entities', 'poi']) {
     const file = path.join(f.root, f.relative(store));
     const bytes = fs.readFileSync(file); bytes.writeUInt32BE(1, 8192); bytes[8196] = 128 | compression; fs.writeFileSync(file, bytes);
-    fs.writeFileSync(path.join(f.root, f.relative(store, 'c.0.0.mcc')), 'opaque external data');
+    const raw = nbt(emptyRecordTags(0, 0, store));
+    fs.writeFileSync(path.join(f.root, f.relative(store, 'c.0.0.mcc')), compression === 1 ? gzipSync(raw) : compression === 2 ? deflateSync(raw) : raw);
     fs.writeFileSync(path.join(f.root, f.relative(store, 'c.100.100.mcc')), 'unrelated');
   }
   const plan = review(f), before = hashTree(f.root);

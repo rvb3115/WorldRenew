@@ -29,6 +29,12 @@ export function payload(type, value) {
 export function tag(type, name, value) { return Buffer.concat([Buffer.from([type]), mutf8(name), payload(type, value)]); }
 export const nbt = values => tag(10, '', values);
 export function writeDat(file, values) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, gzipSync(nbt(values))); }
+export function emptyRecordTags(x, z, store = 'region') {
+  return store === 'entities'
+    ? { DataVersion:[3,5023], Position:[11,[x,z]], Entities:[9,{type:10,values:[]}] }
+    : store === 'poi' ? { DataVersion:[3,5023], Sections:[10,{}] }
+    : { DataVersion:[3,5023], xPos:[3,x], zPos:[3,z], Status:[8,'minecraft:full'], sections:[9,{type:10,values:[]}], block_entities:[9,{type:10,values:[]}], block_ticks:[9,{type:10,values:[]}], fluid_ticks:[9,{type:10,values:[]}] };
+}
 
 export function writeRegion(file, entries = [{ x: 0, z: 0 }]) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -36,7 +42,7 @@ export function writeRegion(file, entries = [{ x: 0, z: 0 }]) {
   entries.forEach((c, index) => {
     const slot = ((c.x % 32 + 32) % 32) + ((c.z % 32 + 32) % 32) * 32, sector = index + 2;
     buffer.writeUInt32BE((sector << 8) | 1, slot * 4); buffer.writeUInt32BE(1800000000, 4096 + slot * 4);
-    const data = deflateSync(nbt({ xPos: [3, c.x], zPos: [3, c.z], Status: [8, 'minecraft:full'] }));
+    const data = deflateSync(nbt(c.tags ?? emptyRecordTags(c.x, c.z, path.basename(path.dirname(file)))));
     buffer.writeUInt32BE(data.length + 1, sector * 4096); buffer[sector * 4096 + 4] = 2; data.copy(buffer, sector * 4096 + 5);
   });
   fs.writeFileSync(file, buffer); return buffer;

@@ -1,8 +1,10 @@
-# Terrain preview (local 0.5.6 test build)
+# Terrain preview (local 0.5.7 test build)
 
 The map reads block states into a 16×16 pixel tile per chunk. Water, shorelines, foliage, roofs and terrain materials now appear with approximate material colors and elevation shading. Point at a column for block coordinates, material and height. Selection tint and outlines preserve the visible terrain; protection, 3D bounds and regeneration reviews retain their existing workflows.
 
 Drag to select chunks, right/Shift-drag or choose Pan to move, and scroll or use +/− to zoom. Arrow keys pan the focused canvas. Go accepts block coordinates; protection selection inputs accept chunk coordinates. North is up. Fit selection zooms to an area without changing it.
+
+An optional [3D topographic view](TOPOGRAPHIC-MAP.md) presents those same surface elevations as a tilted, selectable mesh. It keeps a bounded 11×11 chunk window and does not represent interiors.
 
 ## Interpretation and limits
 

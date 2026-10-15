@@ -30,7 +30,7 @@ function region(file, records) {
   fs.writeFileSync(file, Buffer.concat([header, ...sectors]));
 }
 /** Generated format fixture only: block platform, chest inventory, villager, POI and two player accounts. */
-export function preservationWorld(root) {
+export function preservationWorld(root, { removalHasContents = false } = {}) {
   makeWorld(root, { dataVersion: 5023 }); writeDat(path.join(root, 'level.dat'), levelTags());
   for (const [i] of playerIds.entries()) {
     writeDat(path.join(root, playerPath(i)), playerTags(i, i === 1 ? { Dimension: [8, 'minecraft:the_end'], respawn: spawnTag([8, 65, 8], 'minecraft:the_end') } : {}));
@@ -42,9 +42,17 @@ export function preservationWorld(root) {
   for (const store of ['region', 'entities', 'poi']) region(path.join(root, `dimensions/minecraft/overworld/${store}/r.0.0.mca`), [0, 4].map(x => ({ x,
     tags: store === 'region' ? { DataVersion: [3, 5023], xPos: [3, x], zPos: [3, 0], Status: [8, 'minecraft:full'],
       sections: [9, { type: 10, values: [{ Y: [1, 4], block_states: [10, { palette: [9, { type: 10, values: [{ id: [8, 'minecraft:oak_planks'] }] }] }] }] }],
-      block_entities: [9, { type: 10, values: [{ id: [8, 'minecraft:chest'], x: [3, x * 16 + 1], y: [3, 65], z: [3, 1], Items: playerTags().Inventory }] }] }
-      : store === 'entities' ? { DataVersion: [3, 5023], Position: [11, [x, 0]], Entities: [9, { type: 10, values: [{ id: [8, 'minecraft:villager'], UUID: [11, [20, 21, 22, x]], Pos: [9, { type: 6, values: [x * 16 + 8, 65, 8] }] }] }] }
+      block_entities: [9, { type: 10, values: x === 0 || removalHasContents ? [{ id: [8, 'minecraft:chest'], x: [3, x * 16 + 1], y: [3, 65], z: [3, 1], Items: [9, {type:10, values:[...playerTags().Inventory[1].values,...richPlayerFields.Inventory[1].values.map((item,i)=>({...item,Slot:[1,i+1]}))]}] }] : [] }] }
+      : store === 'entities' ? { DataVersion: [3, 5023], Position: [11, [x, 0]], Entities: [9, { type: 10, values: x === 0 || removalHasContents ? [{ id: [8, 'minecraft:villager'], UUID: [11, [20, 21, 22, x]], Pos: [9, { type: 6, values: [x * 16 + 8, 65, 8] }] }] : [] }] }
       : { DataVersion: [3, 5023], Sections: [10, { 4: [10, { Valid: [1, 1], Records: [9, { type: 10, values: [{ pos: [11, [x * 16 + 8, 65, 8]], type: [8, 'minecraft:home'], free_tickets: [3, 1] }] }] }] }] }
   })));
   return root;
 }
+
+// Opaque field-retention fixtures, not a claim of game-load compatibility.
+const itemList=values=>[9,{type:10,values}];
+const equipment=[
+  {Slot:[1,0],id:[8,'minecraft:diamond_pickaxe'],count:[3,1],components:[10,{'minecraft:damage':[3,123],'minecraft:custom_data':[10,{unknown_long:[4,-9223372036854775807n],unknown_bytes:[7,Buffer.from([0,255,17])]}]}]},
+  {Slot:[1,103],id:[8,'minecraft:diamond_helmet'],count:[3,1],components:[10,{'minecraft:damage':[3,51],'minecraft:enchantments':[10,{'minecraft:protection':[3,4]}]}]},
+  {Slot:[1,-106],id:[8,'minecraft:shield'],count:[3,1],tag:[10,{Damage:[3,7],UnfamiliarField:[8,'retain verbatim']}]}];
+export const richPlayerFields={Inventory:itemList(equipment),EnderItems:itemList([{Slot:[1,4],id:[8,'minecraft:shulker_box'],count:[3,1],components:[10,{'minecraft:container':itemList([{slot:[3,2],item:[10,equipment[0]]}])}]}]),Health:[5,17.5],foodLevel:[3,9],foodSaturationLevel:[5,2.5],foodExhaustionLevel:[5,3.25],XpP:[5,.5],XpLevel:[3,42],XpTotal:[3,3000],UnknownFuturePlayerField:[10,{marker:[8,'unchanged'],bits:[12,[1n,-1n]]}]};

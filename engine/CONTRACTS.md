@@ -18,6 +18,7 @@ An entry with both `Name` and `id`, mismatched property casing, non-string prope
 
 - `inspectWorld(folder, progress?)`: reads metadata and record structure; returns metadata, dimensions, validation errors and inventory fingerprints. Never writes a source.
 - `createRegenerationReview(world, selected, protection, options?, progress?)`: read-only schemaVersion 1 review, non-executable, with playerSafety and copyExport blockers. A desktop preview must retain its digest and invalidate it after changed selections/protection/options.
+- Reviews also include additive `removalSafety` diagnostics. Supported reset exports decode candidate block-entity/entity lists and refuse nonempty or uncertain contents. These diagnostics participate in the digest and copied-review comparison. No acknowledgement overrides the preservation gate.
 - `createRegeneratedCopy(world, review, outputParent, acknowledgements, progress?)`: revalidates the retained review, requires both confirmations, owns backup and working copy, and returns paths only after validation. A caller cannot supply an existing writable destination world.
 - `createVerifiedCopy(source, outputParent, {confirmedClosed}, progress?)`: full verified snapshot, with an external manifest. This does not upgrade a Minecraft save.
 - `createChunkReader`, `captureVolume`, archive capture/validation and placement previews retain their existing function signatures and normalized block-state values.

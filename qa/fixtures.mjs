@@ -83,7 +83,7 @@ export function createFixture(root, { modern = true, seed = 12345n, dataVersion 
           ? { id: [8, 'minecraft:end_gateway'], x: [3, 8], y: [3, 65], z: [3, 8], ExitPortal: [10, { X: [3, 104], Y: [3, 75], Z: [3, 8] }], ExactTeleport: [1, 1] }
           : { id: [8, 'minecraft:chest'], x: [3, 3], y: [3, 65], z: [3, 2], Items: items };
         const tags = store === 'region' ? terrainTags(x, z, (xx, yy, zz) => blockFor(d, xx, yy, zz), { modern, ys: d === 'the_nether' ? [4, 7, 8] : [4], attachments: x === 0 && z === 0 ? [attachment] : [], dataVersion })
-          : store === 'entities' ? { DataVersion: [3, dataVersion], Position: [11, [x, z]], Entities: list([{ id: [8, d === 'the_end' ? 'minecraft:endermite' : 'minecraft:villager'], UUID: [11, [20 + i, 21, x, z]], Pos: [9, { type: 6, values: [x * 16 + 8.5, y, z * 16 + 8.5] }] }]) }
+          : store === 'entities' ? { DataVersion: [3, dataVersion], Position: [11, [x, z]], Entities: list(x === 4 ? [] : [{ id: [8, d === 'the_end' ? 'minecraft:endermite' : 'minecraft:villager'], UUID: [11, [20 + i, 21, x, z]], Pos: [9, { type: 6, values: [x * 16 + 8.5, y, z * 16 + 8.5] }] }]) }
           : { DataVersion: [3, dataVersion], Sections: [10, { 4: [10, { Valid: [1, 1], Records: list([{ pos: [11, [x * 16 + 5, 65, z * 16 + 2]], type: [8, 'minecraft:home'], free_tickets: [3, 1] }]) }] }] };
         const file = regionPath(d, store, x, z); if (!groups.has(file)) groups.set(file, []);
         groups.get(file).push({ x, z, tags });

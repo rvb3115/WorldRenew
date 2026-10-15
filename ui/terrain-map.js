@@ -95,7 +95,7 @@ export class TerrainMap {
         if (tile.status === 'ready') {
           tile.image = document.createElement('canvas'); tile.image.width = tile.image.height = 16;
           tile.image.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(tile.rgba), 16, 16), 0, 0);
-          delete tile.rgba;
+          // Keep the 1 KiB projected color tile for the optional surface mesh.
         }
         put(this.tiles, key(tile.x, tile.z), tile, TERRAIN_CACHE_LIMIT);
       }
@@ -126,5 +126,18 @@ export class TerrainMap {
     if (tile.status !== 'ready') return `${tile.status} · ${tile.message ?? tile.code}`;
     const i = ((blockZ % 16 + 16) % 16) * 16 + ((blockX % 16 + 16) % 16);
     return tile.ids[i] ? `Y ${tile.heights[i]} · ${tile.palette[tile.ids[i]]}` : tile.emptyLabel;
+  }
+  requestWindow(cells) {
+    this.visible = cells.map(c => this.chunkIndex.get(key(c.x,c.z))).filter(Boolean);
+    this.overLimit = this.visible.length > TERRAIN_VISIBLE_LIMIT;
+    this.schedule(); this.describe();
+  }
+  tileAt(x,z) {
+    const cached=this.tiles.get(key(x,z));if(cached)return cached;
+    const failed=this.failedRegions.find(r=>r.rx===Math.floor(x/32)&&r.rz===Math.floor(z/32));
+    const region=this.regions.find(r=>r.rx===Math.floor(x/32)&&r.rz===Math.floor(z/32));
+    if(failed||region?.issues.length)return {x,z,status:'unreadable'};
+    if(this.chunkIndex.has(key(x,z)))return {x,z,status:this.reason?'unsupported':'pending'};
+    return {x,z,status:this.dimension?.issues.length?'unreadable':'absent'};
   }
 }

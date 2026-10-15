@@ -10,6 +10,7 @@ import { projectDirectoryOutsideWorld, validateProtection } from './projects.js'
 import { requireThat } from './errors.js';
 import { regenerationExportPolicy } from './versions.js';
 import { inspectPlayerSafety, playerFiles } from './players.js';
+import { inspectRemovalSafety } from './removal-safety.js';
 
 const stores = ['region', 'entities', 'poi'];
 const key = c => `${c.dimension}:${c.x},${c.z}`;
@@ -117,21 +118,27 @@ export function createRegenerationReview(world, selected, protection, { bufferCh
   }
   const playerSafety = inspectPlayerSafety(fresh, candidates, bufferChunks, snapshot);
   warnings.push(`${playerSafety.players.length} player records reviewed; ${playerSafety.anchors.length} saved-position/spawn anchors checked. ${playerSafety.limitations}`);
+  const policy = regenerationExportPolicy(fresh.metadata, [...new Set(candidates.map(c => c.dimension))].map(id => dimensions.get(id)));
+  const removalSafety = policy.blockers.length
+    ? { policy: 'preserve-all-block-entities-and-entities', checked: [], complete: false, blockers: ['Content removal inspection is unavailable for this unsupported export version or dimension.'] }
+    : inspectRemovalSafety(fresh, candidates, progress);
+  if (!policy.blockers.length) blockers.push(...removalSafety.blockers);
+  warnings.push('Chunk reset refuses removal of any block entities or entities. Protect those chunks; there is no inventory-deletion override. Unknown or unreadable attachment data also blocks export.');
+  warnings.push('Reset still removes selected terrain, including glass, fences, stairs, doors, portal blocks and redstone. Protect entire builds and connected circuits across chunk boundaries; unchanged stored blocks do not certify gameplay behavior.');
   progress({ phase: 'Verifying review inputs' });
   for (const file of snapshots.values()) requireThat(digest(fileSnapshot(fresh.root, file.path)) === digest(file), 'REVIEW_CHANGED', `Review inputs changed: ${file.path}. Refresh the world.`);
   requireThat(inspectWorld(fresh.root).inventoryFingerprint === fresh.inventoryFingerprint, 'REVIEW_CHANGED', 'World inventory changed during review. Refresh the world.');
   try { requireThat(digest(playerFiles(fresh.root)) === digest(playerSafety.files), 'REVIEW_CHANGED', 'Player file inventory changed during review.'); }
   catch (error) { if (error.code === 'REVIEW_CHANGED') throw error; playerSafety.blockers.push(error.message); }
   const uniqueBlockers = [...new Set(blockers)];
-  const policy = regenerationExportPolicy(fresh.metadata, [...new Set(candidates.map(c => c.dimension))].map(id => dimensions.get(id)));
-  const exportBlockers = [...uniqueBlockers, ...policy.blockers, ...playerSafety.blockers];
+  const exportBlockers = [...new Set([...uniqueBlockers, ...policy.blockers, ...playerSafety.blockers, ...removalSafety.blockers])];
   const review = {
     schemaVersion: 1, type: preview.type, executable: false, status: uniqueBlockers.length ? 'blocked' : 'review-only',
     world: { root: fresh.root, name: fresh.metadata.name, version: fresh.metadata.version, dataVersion: fresh.metadata.dataVersion, inventoryFingerprint: fresh.inventoryFingerprint },
     selection: selectedChunks, protection: protectedChunks, bufferChunks, candidates, excludedProtected: preview.excludedProtected, excludedBuffer,
     counts: { selected: selectedChunks.length, candidates: candidates.length, protected: preview.excludedProtected.length, buffer: excludedBuffer.length, records: counts, inspectedRegionFiles: [...regionCache.values()].filter(r => r.region).length, affectedRegionFiles: new Set(records.filter(r => ['present', 'invalid'].includes(r.status)).map(r => r.region)).size },
     records, inputFiles: [...snapshots.values()].sort((a, b) => a.path.localeCompare(b.path)), blockers: uniqueBlockers, warnings,
-    playerSafety, copyExport: { ...policy, eligible: exportBlockers.length === 0, blockers: exportBlockers },
+    playerSafety, removalSafety, copyExport: { ...policy, eligible: exportBlockers.length === 0, blockers: exportBlockers },
     requiredGates: preview.requiredGates.map(gate => ({ gate, satisfied: false })),
     backup: { required: true, verified: false, explanation: 'Create a complete verified backup before any future write. A separate disposable working copy and post-write validation are also mandatory. This review cannot authorize deletion.' },
     explanation: preview.explanation
