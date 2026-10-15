@@ -2,8 +2,9 @@ const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 // Independent, single-flight reader: never occupies the export/protection operation lock.
 class TerrainService {
-  constructor(world) {
+  constructor(world, cacheDirectory) {
     this.world = world;
+    this.cacheDirectory=cacheDirectory;
     this.worker = null;
     this.pending = null;
     this.sequence = 0;
@@ -11,8 +12,8 @@ class TerrainService {
   start() {
     if (this.worker) return;
     const world = { root: this.world.root, fingerprint: this.world.fingerprint, metadata: this.world.metadata,
-      dimensions: this.world.dimensions.map(({ key, id, path }) => ({ key, id, path })) };
-    const worker = this.worker = new Worker(path.join(__dirname, 'terrain-worker.mjs'), { workerData: { world }, resourceLimits: { maxOldGenerationSizeMb: 256 } });
+      dimensions: this.world.dimensions.map(({ key, id, path, regions }) => ({ key, id, path, regions:regions.map(({rx,rz,path,sourceStamp,chunks})=>({rx,rz,path,sourceStamp,externals:chunks.filter(c=>c.external).map(({x,z})=>({x,z}))})) })) };
+    const worker = this.worker = new Worker(path.join(__dirname, 'terrain-worker.mjs'), { workerData: { world,cacheDirectory:this.cacheDirectory }, resourceLimits: { maxOldGenerationSizeMb: 256 } });
     worker.on('message', message => {
       if (this.pending?.id !== message.id) return;
       const pending = this.pending; this.pending = null; clearTimeout(pending.timer);

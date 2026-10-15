@@ -6,6 +6,8 @@ import { canonicalWorld, readBounded, safePath } from './paths.js';
 import { requireThat } from './errors.js';
 import { terrainColor } from './terrain-colors.js';
 import { terrainSupport, terrainVersions, terrainHeights, TERRAIN_BATCH_LIMIT, TERRAIN_CACHE_LIMIT } from './terrain-policy.js';
+import { TerrainDiskCache } from './terrain-disk-cache.js';
+import { summarizeTerrain, TERRAIN_SUMMARY_SCHEMA } from './terrain-summary.js';
 
 export function terrainOptions(metadata, dimension, request = {}) {
   const reason = terrainSupport(metadata, dimension);
@@ -76,23 +78,63 @@ export function projectTerrain(nbt, options, dimensionId) {
 }
 
 /** Session-only LRU of projected pixels, never raw chunks. One request is at most 16 chunks. */
-export function createTerrainReader(world, { cacheLimit = TERRAIN_CACHE_LIMIT } = {}) {
+export function createTerrainReader(world, { cacheLimit = TERRAIN_CACHE_LIMIT, cacheDirectory } = {}) {
   requireThat(Number.isInteger(cacheLimit) && cacheLimit >= 1 && cacheLimit <= TERRAIN_CACHE_LIMIT, 'TERRAIN_CACHE', 'Invalid terrain cache limit.');
-  const root = canonicalWorld(world.root), cache = new Map();
+  const root = canonicalWorld(world.root), cache = new Map(), regionCache = new Map();
+  const disk = cacheDirectory ? new TerrainDiskCache(cacheDirectory, world) : null;
+  const documents = new Map(), regionIndexes = new Map(world.dimensions.map(d => [d.key, new Map((d.regions??[]).map(r=>[`${r.rx},${r.rz}`,r]))]));
+  const metrics = { decoded: 0, readAttempts: 0, memoryHits: 0, diskHits: 0 };
   const stamp = relative => {
     try { const s = fs.statSync(safePath(root, relative)); return `${s.size}:${s.mtimeMs}:${s.ctimeMs}:${s.ino}`; }
     catch (error) { if (error.code === 'ENOENT') return 'absent'; throw error; }
   };
   const metadataStable = () => requireThat(createHash('sha256').update(readBounded(root, 'level.dat', 16 * 1024 * 1024)).digest('hex') === world.fingerprint, 'WORLD_CHANGED', 'World metadata changed. Refresh the world map.');
+  function regionDocument(dimension, options, rx, rz) {
+    const r = regionIndexes.get(dimension.key)?.get(`${rx},${rz}`);
+    if (!r) return null;
+    const current = stamp(r.path), s = r.sourceStamp;
+    requireThat(current === `${s.bytes}:${s.mtimeMs}:${s.ctimeMs}:${s.ino}`, 'WORLD_CHANGED', 'A region changed since inspection. Refresh the map to update its chunk index.');
+    const externals = r.externals ?? r.chunks?.filter(c=>c.external).map(c=>({x:c.x,z:c.z})) ?? [];
+    const sourceStamp = createHash('sha256').update(current + '|' + externals.map(c=>`${c.x},${c.z}:${stamp(path.join(path.dirname(r.path),`c.${c.x}.${c.z}.mcc`))}`).join('|')).digest('hex');
+    const identity = JSON.stringify([TERRAIN_SUMMARY_SCHEMA,root,world.fingerprint,dimension.key,dimension.id,options,rx,rz]);
+    let doc = documents.get(identity);
+    if (!doc || doc.sourceStamp !== sourceStamp) {
+      const entries = disk?.read(identity,sourceStamp) ?? [];
+      metrics.diskHits += entries.length;
+      doc = {identity,sourceStamp,entries:new Map(entries.map(e=>[e[0],e]))};
+    }
+    documents.delete(identity); documents.set(identity,doc);
+    while(documents.size>64)documents.delete(documents.keys().next().value);
+    return doc;
+  }
+  function context(request) {
+    const dimension = world.dimensions.find(d=>d.key===request?.dimension);
+    requireThat(dimension,'TERRAIN_DIMENSION','Choose an inspected dimension.');
+    return {dimension,options:terrainOptions(world.metadata,dimension,request)};
+  }
+  const stats = () => ({...metrics,cacheEntries:cache.size,disk:disk?.stats??null});
+  function overview(request) {
+    requireThat(Array.isArray(request?.regions)&&request.regions.length>0&&request.regions.length<=32,'TERRAIN_LIMIT','Validate 1–32 overview regions per request.');
+    const {dimension,options}=context(request);metadataStable();
+    const regions=request.regions.map(({rx,rz})=>{
+      requireThat(Number.isInteger(rx)&&Number.isInteger(rz),'TERRAIN_COORDINATES','Invalid region coordinates.');
+      const doc=regionDocument(dimension,options,rx,rz);
+      requireThat(doc,'TERRAIN_REGION','Region is not in the inspected index.');
+      return {rx,rz,sourceStamp:doc.sourceStamp,entries:[...doc.entries.values()]};
+    });
+    metadataStable();return {regions,...stats()};
+  }
   function batch(request) {
     requireThat(request && Array.isArray(request.chunks) && request.chunks.length > 0 && request.chunks.length <= TERRAIN_BATCH_LIMIT, 'TERRAIN_LIMIT', `Request 1–${TERRAIN_BATCH_LIMIT} chunks at a time.`);
     requireThat(request.chunks.every(c => c && Number.isInteger(c.x) && Number.isInteger(c.z) && Math.abs(c.x) <= 1875000 && Math.abs(c.z) <= 1875000), 'TERRAIN_COORDINATES', 'Terrain coordinates must be chunks inside the vanilla world border.');
-    const dimension = world.dimensions.find(d => d.key === request.dimension);
-    requireThat(dimension, 'TERRAIN_DIMENSION', 'Choose an inspected dimension.');
-    const options = terrainOptions(world.metadata, dimension, request);
+    const {dimension,options}=context(request);
     metadataStable();
-    const results = [];
+    const results = [], summaries = [], touched = new Map(), validated = new Map();
     for (const { x, z } of request.chunks) {
+      const regionKey=`${Math.floor(x/32)},${Math.floor(z/32)}`;
+      if(disk&&!validated.has(regionKey))validated.set(regionKey,regionDocument(dimension,options,Math.floor(x/32),Math.floor(z/32)));
+      const doc=validated.get(regionKey),slot=((z%32+32)%32)*32+((x%32+32)%32);
+      if(request.summaryOnly&&doc?.entries.has(slot)) {const e=doc.entries.get(slot);summaries.push({x,z,state:e[1],rgb:e[2]});continue;}
       const id = `${dimension.key}:${options.mode}:${options.maxY}:${x},${z}`;
       const directory = path.join(dimension.path === '.' ? '' : dimension.path, 'region');
       const region = path.join(directory, `r.${Math.floor(x / 32)}.${Math.floor(z / 32)}.mca`), external = path.join(directory, `c.${x}.${z}.mcc`);
@@ -100,23 +142,30 @@ export function createTerrainReader(world, { cacheLimit = TERRAIN_CACHE_LIMIT } 
       try {
         storageStamp = stamp(region) + '|' + stamp(external);
         const old = cache.get(id);
-        if (old?.storageStamp === storageStamp) { cache.delete(id); cache.set(id, old); results.push(old.value); continue; }
+        if (old?.storageStamp === storageStamp) { cache.delete(id); cache.set(id, old); value=old.value; metrics.memoryHits++; }
+        else {
         // Per-chunk reader releases expanded NBT immediately after projection. Its 32 MiB
         // record and 128 MiB expansion guards remain intact; no raw data enters the LRU.
-        const reader = createChunkReader(root, dimension), chunk = reader.read(x, z);
+        metrics.readAttempts++;
+        const reader = createChunkReader(root, dimension, {regionCache}), chunk = reader.read(x, z);
         for (const region of reader.regions.values()) requireThat(!region?.issues.length, 'CHUNK_ALLOCATION', 'Region has structural errors; absence cannot be established.');
         value = chunk ? projectTerrain(chunk.nbt, options, dimension.id) : { status: 'absent', message: 'No saved chunk record.' };
         reader.verifyStable();
         requireThat(storageStamp === stamp(region) + '|' + stamp(external), 'CHUNK_CHANGED', 'Terrain changed while loading. Refresh the map.');
+        metrics.decoded++;
+        }
       } catch (error) { value = { status: error.code === 'TERRAIN_UNSUPPORTED' ? 'unsupported' : 'unreadable', code: error.code ?? 'IO_ERROR', message: error.message }; }
-      value = { x, z, ...value };
+      if(value.x!==x||value.z!==z)value = { x, z, ...value };
       // Errors can be retried after refresh, but do not create a redraw/retry storm.
       cache.delete(id); cache.set(id, { storageStamp, value });
       while (cache.size > cacheLimit) cache.delete(cache.keys().next().value);
-      results.push(value);
+      const summary=summarizeTerrain(value);summaries.push({x,z,...summary});
+      if(doc){doc.entries.set(slot,[slot,summary.state,summary.rgb]);touched.set(doc.identity,doc);}
+      if(!request.summaryOnly)results.push(value);
     }
     metadataStable();
-    return { tiles: results, cacheEntries: cache.size };
+    for(const doc of touched.values())disk.write(doc.identity,doc.sourceStamp,[...doc.entries.values()]);
+    return { tiles: results, summaries, ...stats() };
   }
-  return { batch, get cacheSize() { return cache.size; } };
+  return { batch, overview, get cacheSize() { return cache.size; }, get stats() { return stats(); } };
 }

@@ -1,4 +1,4 @@
-# WorldRenew 0.5.8-test.1 development test builds
+# WorldRenew 0.5.9-test.1 development test builds
 
 Standalone desktop tools for inspecting and preserving Minecraft Java Edition worlds. One shared application for Windows x64 and Apple Silicon macOS; no mod or separate Java/Node installation is required for packaged builds.
 
@@ -6,7 +6,7 @@ Standalone desktop tools for inspecting and preserving Minecraft Java Edition wo
 
 ## Development branch
 
-`feature/detailed-terrain` contains the next local test build. **0.5.8-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
+`feature/detailed-terrain` contains the next local test build. **0.5.9-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
 
 - [Detailed terrain map](TERRAIN-MAP.md): saved block colors and elevation shading, chunk grid, coordinate navigation, selection/protection, bounded asynchronous tiles and dimension-aware Nether cavern/roof views.
 - [Java 1.21.11 terrain compatibility](TERRAIN-1.21.11.md): schema-validated read-only map support for DataVersion 4671; existing 3D capture and export gates stay unchanged.
@@ -81,3 +81,5 @@ On October 15, 2026, an independent audit reran **182 tests, all passing with no
 Both OS builds use the same world-format gates and operation logic. Platform differences are native menus/window lifecycle, dialogs, filesystem paths/permissions, installed-client texture locations, runtime packaging and update-package selection. Source parity is verified; full native runtime parity is pending Windows tests.
 
 This is a public code snapshot, not a grant of an open-source license. Bundled third-party software retains its own licenses. No Minecraft game assets, saves or client/server JARs are included. WorldRenew is independent and is not affiliated with Mojang or Microsoft.
+
+0.5.9 adds automatic complete per-dimension overview coverage, a bounded persistent terrain cache, fast warm reopening, and camera/selection restoration when switching dimensions. See [terrain loading and cache behavior](TOPOGRAPHIC-MAP.md#complete-top-down-overview-and-dimension-cache-059). Cold full-world decoding remains progressive; smaller template/volume and export limits are unchanged.

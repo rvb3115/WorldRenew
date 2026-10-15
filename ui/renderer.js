@@ -11,7 +11,7 @@ let view = { x: 0, z: 0, scale: 8 }, gesture = null;
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const terrain = new TerrainMap(api, () => draw());
 let topographic = null, topographicActive = false;
-let selectionBounds=null, dimensionSelections=new Map();
+let selectionBounds=null, dimensionSelections=new Map(), dimensionViews=new Map();
 const key = (x, z) => `${x},${z}`;
 const protectionKey = (dimension, x, z) => `${dimension}:${x},${z}`;
 const fmt = value => value.toLocaleString();
@@ -33,7 +33,7 @@ async function call(action, loading) {
 }
 function addDetail(name, value) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = name; dd.textContent = value ?? 'Unavailable'; $('metadata').append(dt, dd); }
 function load(value) {
-  dimensionSelections.clear();selection=new Set();dimension=null;
+  dimensionSelections.clear();dimensionViews.clear();selection=new Set();dimension=null;
   terrainSession = value.terrainSession;
   world = value.report; protectedChunks = new Map(value.project.protection.map(c => [protectionKey(c.dimension, c.x, c.z), c])); dirty = false;
   $('world-name').textContent = world.metadata.name; $('world-path').textContent = world.root; $('world-path').title = world.root;
@@ -94,19 +94,25 @@ function invalidateRegeneration() {
 $('protection-buffer').onchange = () => { invalidateRegeneration(); draw(); };
 function changeDimension() {
   invalidateRegeneration();
-  if(dimension)dimensionSelections.set(dimension.key,selection);
+  if(dimension){dimensionSelections.set(dimension.key,selection);dimensionViews.set(dimension.key,{view:{...view},mode:$('terrain-mode').value,y:Number($('terrain-y').value),topographic:topographic?.snapshot(),active:topographicActive});}
   dimension = world?.dimensions.find(d => d.key === $('dimension').value) ?? null;
+  const saved=dimensionViews.get(dimension?.key);
   chunks = dimension ? dimension.regions.flatMap(r => r.chunks) : []; selection=dimensionSelections.get(dimension?.key)??new Set();
   $('map-empty').hidden = chunks.length > 0 || dimension?.unreadableRegions?.length > 0 || !world; $('preview-result').textContent = 'Preview the chunks to remove from a separate copy.';
-  configureTerrain(); fit(); updateSelection();
+  if(saved)view={...saved.view};
+  configureTerrain(saved);
+  if(saved){setMapView(saved.active);if(saved.topographic)topographic?.restore(saved.topographic);view={...saved.view};draw();}
+  else fit();
+  updateSelection();
 }
-function configureTerrain() {
+function configureTerrain(saved) {
   const nether = dimension?.id === 'minecraft:the_nether', select = $('terrain-mode');
   select.replaceChildren();
   const modes = nether ? [['caverns', 'Cavern floors'], ['roof', 'Above roof · Y 128–255'], ['surface', 'Top surface (includes roof)'], ['cutaway', 'Below chosen Y']] : [['surface', 'Top surface'], ['cutaway', 'Below chosen Y']];
   for (const [value, label] of modes) { const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option); }
   const heights = terrainHeights[dimension?.id];
   $('terrain-y').min = heights?.minY ?? 0; $('terrain-y').max = heights?.maxY ?? 255; $('terrain-y').value = nether ? 64 : 80;
+  if(saved){select.value=saved.mode;$('terrain-y').value=saved.y;}
   resetTerrain();
 }
 function resetTerrain() {
@@ -185,6 +191,7 @@ $('topographic-north').onclick=()=>topographic?.north();
 $('view-scale').oninput=()=>topographic?.setScale(Number($('view-scale').value));
 $('view-scale-reset').onclick=()=>topographic?.resetScale();
 function draw() {
+  Object.assign(canvas.dataset,{centerX:view.x,centerZ:view.z,scale:view.scale,dimension:dimension?.key??''});
   if(topographicActive){topographic.update(terrain,(x,z)=>selection.has(key(x,z))?(regenerationMarks.get(protectionKey(dimension?.key,x,z))??'#81caff'):protectedChunks.has(protectionKey(dimension?.key,x,z))?'#b9e6a1':null);return;}
   const ratio = window.devicePixelRatio || 1, width = canvas.clientWidth, height = canvas.clientHeight;
   if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) { canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio); }

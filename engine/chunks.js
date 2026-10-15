@@ -64,7 +64,7 @@ export function decodeSection(section) {
 }
 
 /** Read-only, bounded, per-operation cache. Missing chunks stay missing, not air. */
-export function createChunkReader(root, dimension) {
+export function createChunkReader(root, dimension, { regionCache } = {}) {
   const regions = new Map(), chunks = new Map(), snapshots = new Map(), observations = new Map();
   let decodedBytes = 0;
   function observe(relative) {
@@ -75,8 +75,16 @@ export function createChunkReader(root, dimension) {
     const id = `${store}:${x},${z}`; if (chunks.has(id)) return chunks.get(id);
     const relative = path.join(dimension.path === '.' ? '' : dimension.path, store, `r.${Math.floor(x / 32)}.${Math.floor(z / 32)}.mca`);
     if (!regions.has(relative)) {
-      observations.set(relative, observe(relative));
-      try { regions.set(relative, inspectRegion(root, relative)); }
+      const storageStamp=observe(relative),cacheKey=path.join(root,relative);
+      observations.set(relative, storageStamp);
+      try {
+        const old=regionCache?.get(cacheKey);
+        const region=old?.storageStamp===storageStamp ? old.region : inspectRegion(root,relative);
+        regions.set(relative,region);
+        // Terrain alone opts into this header cache. Raw NBT/payloads never enter it.
+        // Errors are re-inspected, including repaired/missing external payloads.
+        if(regionCache&&!region.issues.length){regionCache.delete(cacheKey);regionCache.set(cacheKey,{storageStamp,region});while(regionCache.size>64)regionCache.delete(regionCache.keys().next().value);}
+      }
       catch (error) { if (error.code === 'ENOENT') regions.set(relative, null); else throw error; }
     }
     const region = regions.get(relative), allocation = region?.chunks.find(c => c.x === x && c.z === z);

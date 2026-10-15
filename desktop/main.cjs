@@ -72,7 +72,7 @@ app.whenReady().then(async () => {
     let project;
     try { project = loadProject(projects, report); }
     catch (error) { project = { protection: [], warnings: [`Project could not be loaded: ${error.message}`] }; }
-    terrain?.dispose(); terrain = new TerrainService(report); terrainSession++;
+    terrain?.dispose(); terrain = new TerrainService(report,path.join(app.getPath('userData'),'terrain-cache')); terrainSession++;
     current = report; regenerationReview = null; transfer = null; capturedBuild = null; portableBuild=null;portableReview=null; return { report, project, projectDirectory: projects, terrainSession };
   };
   ipcMain.handle('terrain:tiles', async (event, request) => {

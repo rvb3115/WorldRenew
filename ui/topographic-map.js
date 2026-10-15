@@ -19,6 +19,8 @@ export class TopographicMap {
     canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();this.unavailable=true;this.setActive(false);this.onFailure('Topographic graphics context was lost. Top-down remains available; reopen the app to retry 3D.');});
   }
   setActive(active){this.active=active;this.canvas.hidden=!active;if(!active){cancelAnimationFrame(this.frame);this.frame=null;this.gesture=null;}else this.requestFrame();}
+  snapshot(){return {x:this.x,z:this.z,y:this.y,distance:this.distance,yaw:this.yaw,tilt:this.tilt};}
+  restore(value){Object.assign(this,value);this.focusHeight=false;this.syncScaleControl();this.changed();}
   setLocation(x,z,{resetScale=false}={}){this.x=clamp(x,-30000000,30000000);this.z=clamp(z,-30000000,30000000);if(resetScale)this.distance=REFERENCE_DISTANCE;this.focusHeight=true;this.changed();}
   changed(){this.onNavigate(this.x,this.z);this.sync();this.requestFrame();}
   syncScaleControl(){const slider=document.getElementById('view-scale');slider.value=String(sliderForDistance(this.distance));slider.setAttribute('aria-valuetext',scaleLabel(this.distance));document.getElementById('view-scale-value').textContent=scaleLabel(this.distance);}
