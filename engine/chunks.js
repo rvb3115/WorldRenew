@@ -16,6 +16,13 @@ export function stateKey(state) { return state.Name + JSON.stringify(Object.entr
 // Normalize disk encodings at the read boundary. The viewer/archive comparison API
 // continues to use Name/Properties; this does not enable a 26.3 write adapter.
 function readBlockState(entry) {
+  // Binary NBT represents heterogeneous lists as compounds. Only compact
+  // string states may use the exact single-empty-key wrapper here; do not
+  // unwrap arbitrary compounds globally or guess at future state schemas.
+  if (entry && typeof entry === 'object' && Object.hasOwn(entry, '')) {
+    requireThat(!Array.isArray(entry) && !Buffer.isBuffer(entry) && Object.keys(entry).length === 1 && typeof entry[''] === 'string', 'BLOCK_STATE', 'Invalid compact block-state wrapper.');
+    entry = entry[''];
+  }
   let name, properties;
   if (typeof entry === 'string') name = entry;
   else {
