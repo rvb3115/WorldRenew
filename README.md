@@ -1,22 +1,28 @@
-# WorldRenew 0.5.3 experimental test builds
+# WorldRenew 0.5.4-test.1 experimental test builds
 
 Standalone desktop tools for inspecting and preserving Minecraft Java Edition worlds. One shared application for Windows x64 and Apple Silicon macOS; no mod or separate Java/Node installation is required for packaged builds.
 
-**Experimental, unsigned test builds. Use disposable world copies only. Minecraft game-load, multiplayer login, portal travel, farm functionality and terrain continuity are not certified. Basic Windows launch is user-confirmed; automated native Windows runtime validation is pending.**
+**Experimental, unsigned test builds. Use disposable world copies only. Minecraft game-load, multiplayer login, portal travel, farm functionality and terrain continuity are not certified. Native Windows execution of this parser-fix build and validation against the reported failing world remain pending.**
 
 ## Downloads and launch
 
-Get the Windows portable EXE or Apple Silicon app ZIP from [the experimental prerelease](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.3-test.1). Verify the matching SHA-256 checksum before opening.
+Get the Windows portable EXE or Apple Silicon app ZIP from [the experimental prerelease](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.4-test.1). Verify the matching SHA-256 checksum before opening.
 
-- [Download Windows x64 portable EXE](https://github.com/rvb3115/WorldRenew/releases/download/v0.5.3-test.1/WorldRenew-0.5.3-windows-x64-portable.exe)
-- [Download Apple Silicon Mac app ZIP](https://github.com/rvb3115/WorldRenew/releases/download/v0.5.3-test.1/WorldRenew-0.5.3-macos-arm64.app.zip)
-- [Download reviewed public source ZIP](https://github.com/rvb3115/WorldRenew/releases/download/v0.5.3-test.1/WorldRenew-0.5.3-public-source.zip)
+- [Download Windows x64 portable EXE](https://github.com/rvb3115/WorldRenew/releases/download/v0.5.4-test.1/WorldRenew-0.5.4-test.1-windows-x64-portable.exe)
+- [Download Apple Silicon Mac app ZIP](https://github.com/rvb3115/WorldRenew/releases/download/v0.5.4-test.1/WorldRenew-0.5.4-test.1-macos-arm64.app.zip)
+- [Historical 0.5.3 source ZIP](https://github.com/rvb3115/WorldRenew/releases/download/v0.5.3-test.1/WorldRenew-0.5.3-public-source.zip)
 
-The application source is browsable in this repository and is also preserved in the explicitly named public-source ZIP above. GitHub’s automatically generated Source code archives for this initial release tag contain only the repository bootstrap, not the application.
+The updated source is browsable in this repository and in the Source code archives for tag `v0.5.4-test.1`. The explicitly named 0.5.3 source ZIP is historical and does not contain the parser fix.
 
-- Windows x64: run `WorldRenew-0.5.3-windows-x64-portable.exe`. It needs no installer or administrator rights, extracts its runtime temporarily, and stores settings in normal application data.
-- Apple Silicon, macOS 13+: extract `WorldRenew-0.5.3-macos-arm64.app.zip`, then open `WorldRenew.app`. The app has a local ad-hoc seal, without Developer ID signing or notarization.
+- Windows x64: run `WorldRenew-0.5.4-test.1-windows-x64-portable.exe`. It needs no installer or administrator rights, extracts its runtime temporarily, and stores settings in normal application data.
+- Apple Silicon, macOS 13+: extract `WorldRenew-0.5.4-test.1-macos-arm64.app.zip`, then open `WorldRenew.app`. The app has a local ad-hoc seal, without Developer ID signing or notarization.
 - There is no delivered Intel Mac build. Unidentified-publisher prompts may occur; do not disable system security globally.
+
+## Parser fix in 0.5.4-test.1
+
+Accepts exact single-empty-key binary NBT wrappers around compact block-state strings. Legacy `Name`/`Properties`, modern `id`/`properties` and plain strings retain their existing support. Valid unfamiliar IDs and properties remain exact; fallback visuals never substitute exported block data. Ambiguous encodings, inconsistent archive DataVersions and unsupported placement states remain blocked. This does not add future-schema support or a registry conversion system.
+
+All **204 synthetic tests passed**, including a nine-chunk mixed-palette fixture and byte-exact archive export/reopen checks. The packaged Mac app passed desktop, 3D and archive/copied-world smoke tests. Windows payload verification passed; both builds contain byte-identical app archives. Native Windows execution and the real failing-world retry remain pending. The old release is preserved.
 
 ## Current features and format limits
 
@@ -32,7 +38,7 @@ General world merging, terrain blending, farm adaptation, Nether/End regeneratio
 
 ## Build and test
 
-Clone this repository and enter its root folder, or extract `WorldRenew-0.5.3-public-source.zip` and enter its `WorldRenew` folder. The reviewed snapshot contains source, tests, build scripts, pinned dependencies and sanitized audit evidence. In the browsable repository, the CI workflow is stored as `disabled-workflows/test-builds.yml.txt`; there are no active GitHub Actions workflows. The historical source ZIP retains its original workflow file, which does not run while archived.
+Clone this repository at tag `v0.5.4-test.1` and enter its root folder, or extract the Source code ZIP for that tag. The reviewed snapshot contains source, tests, build scripts, pinned dependencies and sanitized audit evidence. In the browsable repository, the CI workflow is stored as `disabled-workflows/test-builds.yml.txt`; there are no active GitHub Actions workflows. The historical source ZIP retains its original workflow file, which does not run while archived.
 
 Use Node 22.12+ (audited with 24.19.0), npm and a local writable checkout. Dependencies are pinned in the lockfile.
 
@@ -52,7 +58,7 @@ npm run test:packaged       # Run on the matching native OS/architecture
 
 Automated tests use synthetic fixtures; do not open those fixtures in Minecraft. For later gameplay acceptance, see `qa/vanilla/README.md` in the reviewed source. Existing smoke tests use isolated app profiles and test-owned copies. Do not run opt-in real-save scripts against valuable worlds.
 
-## Evidence and provenance
+## Historical 0.5.3 evidence and provenance
 
 The initial test artifacts were built from private development commit `9f8795777b982288c3881d1cf31eefb58a496065`. This public source snapshot retains identical application code; historical reports containing private world labels/local paths and private Git history are intentionally omitted. The existing development repository and workstreams are unchanged.
 
