@@ -57,6 +57,7 @@ export function createRegenerationReview(world, selected, protection, { bufferCh
   if (!candidates.length) blockers.push('No candidate chunks remain after protection and its buffer.');
   const dimensions = new Map(fresh.dimensions.map(d => [d.key, d]));
   const regionCache = new Map(), snapshots = new Map(), records = [], warnings = [
+    ...(fresh.metadata.configuration?.notices ?? []),
     'Header and file checks only. Block contents, structures crossing chunk boundaries, entities, POI semantics and gameplay integrity are not certified.',
     'Minecraft generates missing terrain when a future exported copy is opened. WorldRenew does not generate terrain or change DataVersion.',
     'A protection buffer preserves whole neighboring chunk columns, including diagonal neighbors; it cannot guarantee seamless terrain or intact structures.'

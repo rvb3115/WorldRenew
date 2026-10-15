@@ -37,8 +37,8 @@ if (process.platform === 'darwin') {
   assert.equal(architecture.status, 0); assert.equal(architecture.stdout.trim(), 'arm64');
 } else executable = path.join(root, 'dist/WorldRenew-win32-x64/WorldRenew.exe');
 // Existing full workflows run on the extracted macOS bundle / Windows packaged app.
-for (const script of ['scripts/smoke-desktop.mjs', 'scripts/smoke-transfer.mjs', 'scripts/smoke-archive.mjs']) run(process.execPath, [script], { WORLDRENEW_EXECUTABLE: executable });
-const checks = ['artifact SHA-256', 'packaged desktop/preservation/export', '3D transfer and Nether roof preview', 'build archive and isolated-copy workflow'];
+for (const script of ['scripts/smoke-desktop.mjs', 'scripts/smoke-transfer.mjs', 'scripts/smoke-archive.mjs', 'scripts/smoke-terrain.mjs', 'scripts/smoke-templates.mjs']) run(process.execPath, [script], { WORLDRENEW_EXECUTABLE: executable });
+const checks = ['artifact SHA-256', 'packaged desktop/preservation/export', '3D transfer and Nether roof preview', 'build archive, air-mode review and isolated-copy workflow', 'bounded detailed terrain in all vanilla dimensions', 'portable local template library'];
 if (process.platform === 'win32') {
   // Exercise the final single-file portable launcher as well, without changing app code.
   const fixture = makeWorld(path.join(work, 'portable-fixture'), { demo: true, dataVersion: 5023 });

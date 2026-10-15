@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { readWorldConfiguration, validateConfigurationProvenance } from './world-configuration.js';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {gzipSync,gunzipSync} from 'node:zlib';
@@ -22,6 +23,7 @@ export function entityInside(e,b){
   return Array.isArray(e.Pos)&&inside({x:e.Pos[0],y:e.Pos[1],z:e.Pos[2]},b)||Array.isArray(e.Passengers)&&e.Passengers.some(p=>entityInside(p,b));
 }
 export function captureBuildArchive(world,dimensionKey,bounds,progress=()=>{},expectedDigest){
+  const configuration=readWorldConfiguration(world.root,{fingerprintPacks:false});
   const volume=captureVolume(world,dimensionKey,bounds,progress);requireThat(volume.complete,'ARCHIVE_INCOMPLETE','A portable build needs a complete block selection. Unknown chunks cannot be saved as air.');
   if(expectedDigest)requireThat(volume.digest===expectedDigest,'ARCHIVE_CHANGED','Source blocks changed since the displayed scan. Reload the selection before saving.');
   const dimension=world.dimensions.find(d=>d.key===dimensionKey),reader=createChunkReader(world.root,dimension),records=[];
@@ -32,12 +34,14 @@ export function captureBuildArchive(world,dimensionKey,bounds,progress=()=>{},ex
     records.push({store,x,z,nbt:c?c.raw.toString('base64'):null,sha256:c?sha(c.raw):null});
   }
   reader.verifyStable();requireThat(sha(readBounded(world.root,'level.dat',16*1024*1024))===world.fingerprint,'ARCHIVE_CHANGED','World metadata changed during capture.');
-  const archive={format:'WorldRenew.build',schema:1,createdAt:new Date().toISOString(),source:{name:world.metadata.name,version:volume.version,dataVersion:volume.dataVersion,dimensionId:dimension.id,dimensionKey,bounds:volume.bounds},records};
+  requireThat(readWorldConfiguration(world.root,{fingerprintPacks:false}).digest===configuration.digest,'ARCHIVE_CHANGED','World metadata, feature flags, datapack configuration or generation settings changed during capture.');
+  const archive={format:'WorldRenew.build',schema:1,createdAt:new Date().toISOString(),source:{name:world.metadata.name,version:volume.version,dataVersion:volume.dataVersion,dimensionId:dimension.id,dimensionKey,bounds:volume.bounds,configuration:configuration.provenance},records};
   const checked=validateBuildArchive(archive);requireThat(checked.volume.voxels.every((id,i)=>stateKey(checked.volume.palette[id])===stateKey(volume.palette[volume.voxels[i]])),'ARCHIVE_CHANGED','Archived blocks differ from the selected scan.');return archive;
 }
 export function validateBuildArchive(archive){
   requireThat(archive?.format==='WorldRenew.build'&&archive.schema===1,'ARCHIVE_FORMAT','Unsupported portable build format.');
   const s=archive.source;requireThat(s&&typeof s.name==='string'&&s.name.length<=1024&&/^26\.[23](?:\.\d+)?$/.test(s.version)&&Number.isInteger(s.dataVersion)&&typeof s.dimensionId==='string'&&/^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(s.dimensionId)&&typeof s.dimensionKey==='string','ARCHIVE_SOURCE','Invalid build provenance or unsupported version.');
+  if(s.configuration!==undefined)validateConfigurationProvenance(s.configuration);
   const {bounds,size,count}=validateBounds(s.bounds),expected=new Set();
   for(let z=Math.floor(bounds.minZ/16);z<=Math.floor(bounds.maxZ/16);z++)for(let x=Math.floor(bounds.minX/16);x<=Math.floor(bounds.maxX/16);x++)for(const store of ['region','entities','poi'])expected.add(`${store}:${x},${z}`);
   requireThat(Array.isArray(archive.records)&&archive.records.length===expected.size,'ARCHIVE_RECORDS','Archive is missing chunk-store records.');

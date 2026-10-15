@@ -1,11 +1,12 @@
+import { readWorldConfiguration } from './world-configuration.js';
 import registeredBlocks from './placement-blocks.json' with {type:'json'};
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {readBuildFile,externalParent,sha,entityInside,validEntity} from './build-archive.js';
-import {previewCapturedTransfer} from './transfers.js';
+import {previewCapturedTransfer,DIFFERENCE} from './transfers.js';
 import {captureVolume,indexOf} from './volumes.js';
-import {createChunkReader,decodeSection,stateKey} from './chunks.js';
+import {createChunkReader,decodeSection,stateKey,isAir} from './chunks.js';
 import {readTypedNBT,writeTypedNBT,tag,compound,field,setField,removeField,plain} from './typed-nbt.js';
 import {replaceRegionRecords} from './region-writer.js';
 import {createVerifiedCopy,hashFile} from './safety.js';
@@ -35,15 +36,16 @@ function recordsInBounds(nbt,b){
     if(typeof r.pos!=='string')return true;const pos=BigInt(r.pos),p={x:Number(BigInt.asIntN(26,pos>>38n)),y:Number(BigInt.asIntN(12,pos)),z:Number(BigInt.asIntN(26,pos>>12n))};if(within(p,b))return true;
   }return false;
 }
-export function previewBuildFile(file,destination,dimensionKey,anchor,progress=()=>{},protection=[]){
-  const build=readBuildFile(file),p=previewCapturedTransfer(build.volume,build.archive.source.dimensionId,destination,dimensionKey,anchor,progress),blockers=p.blockers.slice(1),dimension=destination.dimensions.find(d=>d.key===dimensionKey);
+export function previewBuildFile(file,destination,dimensionKey,anchor,progress=()=>{},protection=[],options={}){
+  const configuration=readWorldConfiguration(destination.root);
+  const build=readBuildFile(file),p=previewCapturedTransfer(build.volume,build.archive.source.dimensionId,destination,dimensionKey,anchor,progress,options),blockers=p.blockers.slice(1),dimension=destination.dimensions.find(d=>d.key===dimensionKey);
   if(build.archive.source.version!=='26.2'||destination.metadata.version!=='26.2'||build.volume.dataVersion!==4903||destination.metadata.dataVersion!==4903)blockers.push('Copy placement currently supports the locally examined Java 26.2 / DataVersion 4903 format only. 26.3 build archives can be saved and previewed; placement needs its own validated adapter.');
   if(build.archive.source.dimensionId!==dimension?.id||!['minecraft:overworld','minecraft:the_nether','minecraft:the_end'].includes(dimension?.id))blockers.push('Copy placement requires the same vanilla dimension in both worlds.');
   if([...build.decoded.entries()].some(([key,c])=>key.startsWith('poi:')&&c&&recordsInBounds(c.nbt,build.volume.bounds)))blockers.push('Source points of interest need a future relocation adapter.');
   if(build.volume.attachments.blockEntities.length||build.volume.attachments.entityCount||build.volume.attachments.blockTicks.length||build.volume.attachments.fluidTicks.length)blockers.push('This build contains inventories/block entities, entities or scheduled updates. They are preserved in the archive, but their relocation is not supported yet.');
   const unsupported=[...new Set(build.volume.palette.filter(s=>s&&!placeableState(s)).map(s=>s.Name))];if(unsupported.length)blockers.push(`Source blocks need a future placement adapter: ${unsupported.slice(0,8).join(', ')}.`);
   if(p.destination.attachments.blockEntities.length||p.destination.attachments.blockTicks.length||p.destination.attachments.fluidTicks.length)blockers.push('Placement would touch destination block entities or scheduled updates.');
-  if(p.source.voxels.some((id,i)=>p.differences[i]&&!placeableState(p.destination.palette[p.destination.voxels[i]])))blockers.push('Placement would replace destination blocks that are not supported by the building-block adapter.');
+  if(p.source.voxels.some((id,i)=>p.differences[i]&&p.differences[i]!==DIFFERENCE.skippedAir&&!placeableState(p.destination.palette[p.destination.voxels[i]])))blockers.push('Placement would replace destination blocks that are not supported by the building-block adapter.');
   const reader=createChunkReader(destination.root,dimension),b=p.destination.bounds,ring=[];
   if(protection.some(c=>c.dimension===dimensionKey&&c.x>=Math.floor(b.minX/16)-1&&c.x<=Math.floor(b.maxX/16)+1&&c.z>=Math.floor(b.minZ/16)-1&&c.z<=Math.floor(b.maxZ/16)+1))blockers.push('Placement or its lighting border overlaps protected destination chunks. Choose a different location or explicitly revise the destination protection plan.');
   try{
@@ -57,8 +59,17 @@ export function previewBuildFile(file,destination,dimensionKey,anchor,progress=(
     }
     reader.verifyStable();
   }catch(e){blockers.push(e.message);}
-  const snapshot=[...reader.snapshots.values()],reviewDigest=sha(Buffer.from(JSON.stringify({build:build.digest,world:destination.fingerprint,dimension:dimensionKey,anchor,blocks:p.destination.digest,snapshot,protection})));
-  return {...p,blockers:[...new Set(blockers)],warnings:[...p.warnings,'Experimental building-block copy only: destination biomes are retained; entities, inventories, portals, fluids, redstone, rotation and blending are not placed. Minecraft must rebuild lighting and heightmaps on first load. Game-load certification is still pending.'],copyEligible:blockers.length===0,reviewDigest,archiveDigest:build.digest,archiveSummary:build.summary,ring};
+  requireThat(readWorldConfiguration(destination.root).digest===configuration.digest,'PLACEMENT_STALE','World feature flags, generation settings or datapacks changed during review.');
+  const configurationWarnings=[...configuration.summary.notices];
+  if(!build.archive.source.configuration)configurationWarnings.push('This older template has no recorded feature/datapack provenance. Supported block adapters still apply; no configuration is inferred.');
+  else {
+    const sourceConfiguration=build.archive.source.configuration;
+    if(JSON.stringify(sourceConfiguration.fields)!==JSON.stringify(configuration.provenance.fields)||sourceConfiguration.generationSha256!==configuration.provenance.generationSha256)configurationWarnings.push('Recorded source and destination feature/datapack or generation settings differ. Only supported block states are placed; destination configuration is retained unchanged.');
+    if(sourceConfiguration.packFiles===null)configurationWarnings.push('The template records configuration, but does not bundle or fingerprint datapack payloads. Required packs must already exist in the destination; WorldRenew does not install them.');
+    else if(JSON.stringify(sourceConfiguration.packFiles)!==JSON.stringify(configuration.provenance.packFiles))configurationWarnings.push('Recorded source and destination datapack payloads differ. No datapacks will be installed or replaced.');
+  }
+  const snapshot=[...reader.snapshots.values()],reviewDigest=sha(Buffer.from(JSON.stringify({build:build.digest,world:destination.fingerprint,dimension:dimensionKey,anchor,airMode:p.airMode,configuration:configuration.digest,blocks:p.destination.digest,snapshot,protection})));
+  return {...p,blockers:[...new Set(blockers)],warnings:[...p.warnings,...configurationWarnings,'Experimental building-block copy only: destination biomes are retained; entities, inventories, portals, fluids, redstone, rotation and blending are not placed. Minecraft must rebuild lighting and heightmaps on first load. Game-load certification is still pending.'],copyEligible:blockers.length===0,reviewDigest,archiveDigest:build.digest,archiveSummary:build.summary,ring};
 }
 function paletteNBT(states){
   const palette=[],lookup=new Map(),ids=states.map(s=>{const key=stateKey(s);if(!lookup.has(key)){lookup.set(key,palette.length);palette.push(s);}return lookup.get(key);});
@@ -70,17 +81,21 @@ function stripDerived(root,blocks){
   for(const s of field(root,'sections').value){removeField(s,'BlockLight');removeField(s,'SkyLight');if(blocks)removeField(s,'block_states');}
   return writeTypedNBT(root);
 }
-function changeChunk(raw,x,z,source,anchor){
+function changeChunk(raw,x,z,source,anchor,airMode){
   const root=readTypedNBT(raw),sections=field(root,'sections');requireThat(sections?.type===9&&sections.elementType===10,'PLACEMENT_SCHEMA','Unsupported typed section list.');
   let changed=false;
   for(const section of sections.value){
     const sy=plain(field(section,'Y'));if(sy*16>anchor.y+source.size.y-1||sy*16+15<anchor.y||x*16>anchor.x+source.size.x-1||x*16+15<anchor.x||z*16>anchor.z+source.size.z-1||z*16+15<anchor.z)continue;
-    const decoded=decodeSection(plain(section)),states=Array.from(decoded.indices,i=>decoded.palette[i]);
+    const decoded=decodeSection(plain(section)),states=Array.from(decoded.indices,i=>decoded.palette[i]);let sectionChanged=false;
     for(let ly=0;ly<16;ly++)for(let lz=0;lz<16;lz++)for(let lx=0;lx<16;lx++){
       const dx=x*16+lx-anchor.x,dy=sy*16+ly-anchor.y,dz=z*16+lz-anchor.z;
-      if(dx>=0&&dy>=0&&dz>=0&&dx<source.size.x&&dy<source.size.y&&dz<source.size.z)states[ly*256+lz*16+lx]=source.palette[source.voxels[indexOf(source.size,dx,dy,dz)]];
+      if(dx>=0&&dy>=0&&dz>=0&&dx<source.size.x&&dy<source.size.y&&dz<source.size.z){
+        const sourceState=source.palette[source.voxels[indexOf(source.size,dx,dy,dz)]],index=ly*256+lz*16+lx;
+        if(airMode==='skip'&&isAir(sourceState))continue;
+        if(stateKey(states[index])!==stateKey(sourceState)){states[index]=sourceState;sectionChanged=true;}
+      }
     }
-    setField(section,'block_states',paletteNBT(states));changed=true;
+    if(sectionChanged){setField(section,'block_states',paletteNBT(states));changed=true;}
   }
   if(changed)removeField(root,'Heightmaps');setField(root,'isLightOn',tag(1,0));for(const s of sections.value){removeField(s,'BlockLight');removeField(s,'SkyLight');}
   return {raw:writeTypedNBT(root),changed};
@@ -95,18 +110,18 @@ function verifyFiles(root,manifest,allowed=new Set()){
   for(const f of manifest.files)if(!allowed.has(f.path))requireThat(hashFile(safePath(root,f.path))===f.sha256,'PLACEMENT_FILES',`Unexpected file change: ${f.path}`);
 }
 /** The sole mutating placement route owns a fresh working copy. No arbitrary output root is accepted. */
-export function createPlacedCopy(file,destination,dimensionKey,anchor,parent,{confirmedClosed=false,reviewDigest,protection=[]}={},progress=()=>{}){
+export function createPlacedCopy(file,destination,dimensionKey,anchor,parent,{confirmedClosed=false,reviewDigest,protection=[],airMode='include'}={},progress=()=>{}){
   requireThat(confirmedClosed===true,'WORLD_OPEN','Close Minecraft and all servers before making the test copy.');
-  const initial=previewBuildFile(file,destination,dimensionKey,anchor,progress,protection);requireThat(initial.copyEligible,'PLACEMENT_BLOCKED',initial.blockers.join(' '));requireThat(reviewDigest===initial.reviewDigest,'PLACEMENT_STALE','The build or destination changed. Review a fresh placement before copying.');
+  const initial=previewBuildFile(file,destination,dimensionKey,anchor,progress,protection,{airMode});requireThat(initial.copyEligible,'PLACEMENT_BLOCKED',initial.blockers.join(' '));requireThat(reviewDigest===initial.reviewDigest,'PLACEMENT_STALE','The build or destination changed. Review a fresh placement before copying.');
   const output=externalParent(parent,[destination.root]),id=randomUUID(),stage=path.join(output,`.WorldRenew-placement-${id}.partial`),final=path.join(output,`WorldRenew-placement-${id}`);fs.mkdirSync(stage,{mode:0o700});let backup,working;
   const labelCopy=(copy,label)=>{const directory=path.join(stage,label);fs.renameSync(copy.directory,directory);copy.directory=directory;copy.world=path.join(directory,'world');copy.manifest=path.join(directory,'manifest.json');};
-  const journal=status=>fs.writeFileSync(path.join(stage,'operation.json'),JSON.stringify({schema:1,status,archiveDigest:initial.archiveDigest,reviewDigest,anchor,dimension:dimensionKey},null,2));
+  const journal=status=>fs.writeFileSync(path.join(stage,'operation.json'),JSON.stringify({schema:1,status,archiveDigest:initial.archiveDigest,reviewDigest,anchor,airMode,dimension:dimensionKey},null,2));
   try{
     journal('backing-up');backup=createVerifiedCopy(destination.root,stage,{confirmedClosed:true},progress);labelCopy(backup,'backup');journal('creating-working-copy');working=createVerifiedCopy(backup.world,stage,{confirmedClosed:true},progress);labelCopy(working,'result');
-    const copied=inspectWorld(working.world),plan=previewBuildFile(file,copied,dimensionKey,anchor,progress,protection);requireThat(plan.copyEligible&&plan.reviewDigest===reviewDigest,'PLACEMENT_STALE','Copy inputs differ from the reviewed placement.');
+    const copied=inspectWorld(working.world),plan=previewBuildFile(file,copied,dimensionKey,anchor,progress,protection,{airMode});requireThat(plan.copyEligible&&plan.reviewDigest===reviewDigest,'PLACEMENT_STALE','Copy inputs differ from the reviewed placement.');
     const dim=copied.dimensions.find(d=>d.key===dimensionKey),reader=createChunkReader(working.world,dim),regions=new Map(),regionOriginals=new Map(),expected=[];
     journal('placing');
-    for(const {x,z}of plan.ring){const old=reader.read(x,z),updated=changeChunk(old.raw,x,z,plan.source,anchor),relative=path.join(dim.path==='.'?'':dim.path,'region',`r.${Math.floor(x/32)}.${Math.floor(z/32)}.mca`);if(!regions.has(relative))regions.set(relative,new Map());regions.get(relative).set(((x%32+32)%32)+((z%32+32)%32)*32,updated.raw);expected.push({x,z,old:old.raw,...updated});}
+    for(const {x,z}of plan.ring){const old=reader.read(x,z),updated=changeChunk(old.raw,x,z,plan.source,anchor,airMode),relative=path.join(dim.path==='.'?'':dim.path,'region',`r.${Math.floor(x/32)}.${Math.floor(z/32)}.mca`);if(!regions.has(relative))regions.set(relative,new Map());regions.get(relative).set(((x%32+32)%32)+((z%32+32)%32)*32,updated.raw);expected.push({x,z,old:old.raw,...updated});}
     reader.verifyStable();
     for(const[relative,replacements]of regions){const target=safePath(working.world,relative),original=readBounded(working.world,relative,256*1024*1024),bytes=replaceRegionRecords(original,replacements),tmp=target+'.worldrenew-partial';regionOriginals.set(relative,original);fs.writeFileSync(tmp,bytes,{flag:'wx'});fs.renameSync(tmp,target);}
     journal('validating');progress({phase:'Validating placed blocks',file:working.world});
@@ -121,10 +136,10 @@ export function createPlacedCopy(file,destination,dimensionKey,anchor,parent,{co
     }
     const afterReader=createChunkReader(working.world,dim);
     for(const e of expected){const c=afterReader.read(e.x,e.z);requireThat(c&&sha(c.raw)===sha(e.raw),'PLACEMENT_VERIFY','Written chunk differs from the prepared chunk.');const old=readTypedNBT(e.old),current=readTypedNBT(c.raw);verifyUntouchedBlocks(plain(old),plain(current),e.x,e.z,plan.destination.bounds);requireThat(stripDerived(old,e.changed).equals(stripDerived(current,e.changed)),'PLACEMENT_VERIFY','Unrelated chunk metadata changed.');}
-    const placed=captureVolume(result,dimensionKey,plan.destination.bounds);requireThat(placed.complete&&placed.voxels.every((v,i)=>stateKey(placed.palette[v])===stateKey(plan.source.palette[plan.source.voxels[i]])),'PLACEMENT_VERIFY','Placed block content differs from the portable build.');
+    const placed=captureVolume(result,dimensionKey,plan.destination.bounds);requireThat(placed.complete&&placed.voxels.every((v,i)=>stateKey(placed.palette[v])===stateKey(airMode==='skip'&&isAir(plan.source.palette[plan.source.voxels[i]])?plan.destination.palette[plan.destination.voxels[i]]:plan.source.palette[plan.source.voxels[i]])),'PLACEMENT_VERIFY','Placed block content differs from the reviewed air policy and portable build.');
     const manifest=JSON.parse(fs.readFileSync(backup.manifest,'utf8'));verifyFiles(working.world,manifest,new Set(regions.keys()));verifyFiles(backup.world,manifest);verifyFiles(destination.root,manifest);
-    fs.writeFileSync(path.join(stage,'validation.json'),JSON.stringify({schema:1,status:'validated-test-copy',gameLoadTested:false,blocks:placed.stats.total,modifiedRegions:[...regions.keys()],lightingChunks:expected.length,archiveDigest:plan.archiveDigest,warnings:plan.warnings},null,2));journal('validated-test-copy');
+    fs.writeFileSync(path.join(stage,'validation.json'),JSON.stringify({schema:1,status:'validated-test-copy',gameLoadTested:false,blocks:placed.stats.total,airMode,effects:plan.effects,modifiedRegions:[...regions.keys()],lightingChunks:expected.length,archiveDigest:plan.archiveDigest,warnings:plan.warnings},null,2));journal('validated-test-copy');
     const backupRelative=path.relative(stage,backup.world),worldRelative=path.relative(stage,working.world);fs.renameSync(stage,final);
-    return {directory:final,world:path.join(final,worldRelative),backup:path.join(final,backupRelative),report:path.join(final,'validation.json'),blocks:placed.stats.total};
+    return {directory:final,world:path.join(final,worldRelative),backup:path.join(final,backupRelative),report:path.join(final,'validation.json'),blocks:placed.stats.total,airMode,effects:plan.effects};
   }catch(e){if(working)fs.rmSync(working.directory,{recursive:true,force:true});if(backup){journal('failed-working-copy-discarded');e.message+=` Verified backup retained at ${backup.world}`;}else fs.rmSync(stage,{recursive:true,force:true});throw e;}
 }

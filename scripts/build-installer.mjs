@@ -51,7 +51,9 @@ const file = config.artifactName, bytes = fs.readFileSync(path.join(output, file
 const sha256 = createHash('sha256').update(bytes).digest('hex');
 fs.writeFileSync(path.join(output, 'installer-policy.json'), JSON.stringify(policy, null, 2) + '\n');
 fs.writeFileSync(path.join(output, `${file}.sha256`), `${sha256}  ${file}\n`);
-fs.writeFileSync(path.join(output, 'build-info.json'), JSON.stringify({ file, version: pkg.version, bytes: bytes.length, sha256, host: `${process.platform}-${process.arch}`, unsigned: true, localOnly: true, windowsExecutionTested: false, builtAt: new Date().toISOString() }, null, 2) + '\n');
+const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+const status = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
+fs.writeFileSync(path.join(output, 'build-info.json'), JSON.stringify({ file, version: pkg.version, bytes: bytes.length, sha256, commit: revision.status === 0 ? revision.stdout.trim() : null, dirty: status.status === 0 ? Boolean(status.stdout.trim()) : null, host: `${process.platform}-${process.arch}`, unsigned: true, localOnly: true, windowsExecutionTested: false, builtAt: new Date().toISOString() }, null, 2) + '\n');
 const verification = spawnSync(process.execPath, ['scripts/verify-installer.mjs'], { cwd: root, stdio: 'inherit' });
 if (verification.error) throw verification.error;
 assert.equal(verification.status, 0, 'Installer payload verification failed');

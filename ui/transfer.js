@@ -8,7 +8,7 @@
   let geometry = null, geometryKey = '', camera = { zoom: 1, x: 0, y: 0 }, drag = null, plane = null, frame = 0;
   const air = s => ['minecraft:air','minecraft:cave_air','minecraft:void_air'].includes(s?.Name);
   const at = (v,x,y,z) => y*v.size.x*v.size.z+z*v.size.x+x;
-  const diffColors = ['#526b69','#91dfa6','#efb164','#ef7f88','#da9aeb','#80b5ef','#b8a5ee'];
+  const diffColors = ['#526b69','#91dfa6','#efb164','#ef7f88','#da9aeb','#80b5ef','#b8a5ee','#8aa7a9'];
   function status(text, error=false) { $('build-status').textContent=text; $('build-status').title=text; $('build-status').classList.toggle('error',error); }
   function controls() {
     const locked=working||textureLoading;window.transferBusy=locked;
@@ -31,6 +31,7 @@
     $('selection-library').hidden=!!portable;$('build-archive-save').hidden=!!portable;$('pick-corners').hidden=!!portable;$('build-capture').hidden=!!portable;
     $('build-save').hidden=!!portable;
     if(portable&&$('build-layer').value==='source')$('build-near-camera').disabled=true;
+    $('placement-air-mode').disabled=locked;
     $('placement-closed').disabled=locked||!preview?.copyEligible;
     $('build-place-copy').disabled=locked||!portable||!preview?.copyEligible||!$('placement-closed').checked;
     $('copy-eligibility').textContent=!portable?'Save or open a portable build to check copy placement.':!preview?'Preview this build at the destination first.':preview.copyEligible?'Ready for an experimental building-block copy. Review the carved and replaced blocks.':`Copy blocked: ${preview.blockers[0]??'Review the notes.'}`;
@@ -47,7 +48,7 @@
   }
   function readBounds(){return Object.fromEntries(['minX','minY','minZ','maxX','maxY','maxZ'].map(k=>[k,$(`build-${k}`).value.trim()===''?NaN:Number($(`build-${k}`).value)]));}
   function readAnchor(){return Object.fromEntries(['x','y','z'].map(k=>[k,$(`build-anchor-${k}`).value.trim()===''?NaN:Number($(`build-anchor-${k}`).value)]));}
-  function resetPreview() { preview=null;$('placement-closed').checked=false;$('build-save').disabled=true;$('build-layer').value='source';displayed=captured;overlay=null;geometry=null;updateSpectator();render();controls(); }
+  function resetPreview() { preview=null;$('air-effect-counts').textContent='Run a fresh placement preview to see affected blocks.';$('placement-closed').checked=false;$('build-save').disabled=true;$('build-layer').value='source';displayed=captured;overlay=null;geometry=null;updateSpectator();render();controls(); }
   function invalidateSource() { scanMatches=false;preview=null;if($('build-layer').value!=='source'||!displayed){$('build-layer').value='source';displayed=captured;overlay=null;updateSpectator();render();}controls();updateSelection();$('build-summary').textContent='Selection changed. Scan again to see the updated blocks.';$('build-findings').replaceChildren();status('Selection changed. The previous preview was cleared.'); }
   function findText(lines) { $('build-findings').parentElement.querySelector('summary').textContent=`Review notes (${lines.length})`;$('build-findings').replaceChildren();for(const line of lines){const li=document.createElement('li');li.textContent=line;$('build-findings').append(li);} }
   function metrics(items) { $('build-summary').replaceChildren();for(const [label,value] of items){const d=document.createElement('div'),s=document.createElement('span'),n=document.createElement('strong');s.textContent=label;n.textContent=Number(value).toLocaleString();d.append(s,n);$('build-summary').append(d);} }
@@ -65,12 +66,16 @@
     $('build-placeholder').hidden=true;updateSpectator();render();loadPreviewTextures();
   }
   function composite(p) {
-    if(!p.context)return {volume:{...p.source,bounds:p.destination.bounds},codes:p.differences};
+    if(!p.context){
+      const offset=p.destination.palette.length,volume={...p.destination,palette:[...p.destination.palette,...p.source.palette],voxels:p.destination.voxels.slice()};
+      for(let i=0;i<volume.voxels.length;i++)if(!(p.airMode==='skip'&&air(p.source.palette[p.source.voxels[i]])))volume.voxels[i]=offset+p.source.voxels[i];
+      return {volume,codes:p.differences};
+    }
     const v={...p.context,palette:[...p.context.palette],voxels:p.context.voxels.slice()}, codes=new Uint8Array(v.voxels.length);
     const map=p.source.palette.map((s,i)=>{if(!i)return 0;v.palette.push(s);return v.palette.length-1;});
     for(let y=0;y<p.source.size.y;y++)for(let z=0;z<p.source.size.z;z++)for(let x=0;x<p.source.size.x;x++){
       const si=at(p.source,x,y,z),di=at(v,x+p.anchor.x-v.bounds.minX,y+p.anchor.y-v.bounds.minY,z+p.anchor.z-v.bounds.minZ);
-      v.voxels[di]=map[p.source.voxels[si]];codes[di]=p.differences[si];
+      if(!(p.airMode==='skip'&&air(p.source.palette[p.source.voxels[si]])))v.voxels[di]=map[p.source.voxels[si]];codes[di]=p.differences[si];
     }
     return {volume:v,codes};
   }
@@ -84,6 +89,7 @@
     setupView();controls();
   }
   window.openTransferPlanner=async({world,dimension,area,archive=null})=>{
+    $('placement-air-mode').value='include'; updateAirPolicy();
     portable=archive;$('placement-closed').checked=false;$('placement-result').textContent='';$('reveal-placement').hidden=true;$('portable-summary').textContent=archive?`Portable build: ${archive.summary.name}. Frozen content; source world is not required. ${archive.summary.entities} entity groups and ${archive.summary.blockEntities} block entities preserved. Includes supporting data from entire intersecting chunks.`:'A portable build freezes blocks and air. It also contains nearby blocks, inventories and entities from the complete intersecting chunks.';
     textureKey='';sourceView=null;sourceWorld=world;destinationWorld=null;destinationView=null;firstCorner=null;secondCorner=null;scanMatches=false;captured=null;preview=null;displayed=null;overlay=null;geometry=null;
     $('build-source-name').textContent=world.metadata.name;fillDimensions($('build-source-dimension'),world,dimension);
@@ -113,8 +119,22 @@
     else if (result === null) status('Template export canceled.');
   };
   $('reveal-placement').onclick=()=>run(()=>api.revealPlacedCopy(),'Showing the created test world…');
+  function updateAirPolicy() {
+    $('placement-air-note').textContent = $('placement-air-mode').value === 'include'
+      ? 'Captured air, cave air and void air clear destination space, including rooms and tunnels. Exterior air inside the selected box also clears blocks.'
+      : 'Captured air, cave air and void air leave destination blocks unchanged. Underground rooms can remain filled.';
+    $('air-effect-counts').textContent = 'Run a fresh placement preview to see affected blocks.';
+  }
+  function showAirEffects(result) {
+    const a = result.effects.sourceAir;
+    $('air-effect-counts').textContent = `${result.effects.changedBlocks.toLocaleString()} blocks change · ${result.counts.carved.toLocaleString()} cleared to air · ${result.counts.skippedAir.toLocaleString()} air positions skipped. Captured: ${a.air} air, ${a.caveAir} cave air, ${a.voidAir} void air; ${a.structureVoid} structure-void and ${a.unknown} unknown. Structure-void is not an air mask.`;
+    $('air-effect-counts').dataset.changed = result.effects.changedBlocks;
+    $('air-effect-counts').dataset.skipped = result.counts.skippedAir;
+    $('air-effect-counts').dataset.carved = result.counts.carved;
+  }
+  $('placement-air-mode').onchange = () => { resetPreview(); updateAirPolicy(); status('Air placement changed. Review a fresh preview before creating a copy.'); };
   $('placement-closed').onchange=controls;
-  $('build-place-copy').onclick=async()=>{if(!preview?.copyEligible)return;const r=await run(()=>api.createPlacedCopy({confirmedClosed:$('placement-closed').checked,reviewDigest:preview.reviewDigest}),'Creating a verified backup and separate test world…');if(r){$('placement-result').textContent=`Created ${r.blocks.toLocaleString()} selected blocks in a separate test world. Backup and validation report are in the same output folder.`;$('placement-result').title=`World: ${r.world}\nBackup: ${r.backup}\nValidation report: ${r.report}`;$('reveal-placement').hidden=false;preview=null;$('placement-closed').checked=false;controls();status('Test world copy created and validated. Original world and backup are unchanged. Test the copied world in Minecraft before relying on it.');}else if(r===null)status('Copy destination selection canceled.');};
+  $('build-place-copy').onclick=async()=>{if(!preview?.copyEligible)return;const r=await run(()=>api.createPlacedCopy({confirmedClosed:$('placement-closed').checked,reviewDigest:preview.reviewDigest}),'Creating a verified backup and separate test world…');if(r){$('placement-result').textContent=`Reviewed ${r.blocks.toLocaleString()} blocks; changed ${r.effects.changedBlocks.toLocaleString()} and skipped ${r.effects.skippedAir.toLocaleString()} air positions in a separate test world. Backup and validation report are in the same output folder.`;$('placement-result').title=`World: ${r.world}\nBackup: ${r.backup}\nValidation report: ${r.report}`;$('reveal-placement').hidden=false;preview=null;$('placement-closed').checked=false;controls();status('Test world copy created and validated. Original world and backup are unchanged. Test the copied world in Minecraft before relying on it.');}else if(r===null)status('Copy destination selection canceled.');};
   $('close-build').onclick=()=>dialog.close();dialog.addEventListener('close',()=>spectator?.setActive(false));dialog.addEventListener('cancel',e=>{if(working||textureLoading)e.preventDefault();});
   async function scanSource(){scanMatches=false;preview=null;const r=await run(()=>api.captureBuild({dimension:$('build-source-dimension').value,bounds:readBounds()}),'Scanning the full source volume…');if(r){showSource(r);status(`Read ${r.stats.total.toLocaleString()} blocks. ${r.complete?'Block selection is complete.':'Selection has missing data or metadata issues.'}`);}return r;}
   $('build-capture').onclick=scanSource;
@@ -124,8 +144,8 @@
     else if(r===null)status('Destination selection canceled.');
   };
   $('build-preview').onclick=async()=>{
-    const r=await run(()=>(portable?api.previewBuildArchive:api.previewTransfer)({dimension:$('build-source-dimension').value,bounds:readBounds(),destinationDimension:$('build-destination-dimension').value,anchor:readAnchor()}),'Comparing source blocks, destination terrain and the boundary…');
-    if(r){$('placement-closed').checked=false;captured=r.source;preview=r;$('build-layer').value='differences';changeLayer();metrics([['PLACED INTO AIR',r.counts.placed],['OVERWRITTEN',r.counts.overwritten],['CARVED TO AIR',r.counts.carved],['UNKNOWN BLOCKS',r.counts.unknown],['BOUNDARY MISMATCHES',r.boundary.occupancyMismatchFaces],['FLUID CHANGES',r.counts.fluid]]);findText([...r.blockers,...r.warnings,...r.source.issues,...r.destination.issues]);controls();status(r.copyEligible?'Placement preview complete. Review the changes, then create a separate test world copy.':'Placement preview complete. Neither world was changed. Copy placement is blocked; see the review notes.');}
+    const r=await run(()=>(portable?api.previewBuildArchive:api.previewTransfer)({dimension:$('build-source-dimension').value,bounds:readBounds(),destinationDimension:$('build-destination-dimension').value,anchor:readAnchor(),airMode:$('placement-air-mode').value}),'Comparing source blocks, destination terrain and the boundary…');
+    if(r){showAirEffects(r);$('placement-closed').checked=false;captured=r.source;preview=r;$('build-layer').value='differences';changeLayer();metrics([['PLACED INTO AIR',r.counts.placed],['OVERWRITTEN',r.counts.overwritten],['CARVED TO AIR',r.counts.carved],['AIR SKIPPED',r.counts.skippedAir],['UNKNOWN BLOCKS',r.counts.unknown],['BLOCKS CHANGED',r.effects.changedBlocks],['FLUID CHANGES',r.counts.fluid]]);findText([...r.blockers,...r.warnings,...r.source.issues,...r.destination.issues]);controls();status(r.copyEligible?'Placement preview complete. Review the changes, then create a separate test world copy.':'Placement preview complete. Neither world was changed. Copy placement is blocked; see the review notes.');}
   };
   $('build-save').onclick=async()=>{const r=await run(()=>api.saveTransferPlan(),'Saving an external preview report…');if(r)status(`Preview report saved outside both worlds: ${r.file}`);};
   for(const k of ['minX','minY','minZ','maxX','maxY','maxZ'])$(`build-${k}`).addEventListener('input',invalidateSource);

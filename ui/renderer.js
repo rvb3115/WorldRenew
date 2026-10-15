@@ -34,6 +34,14 @@ function load(value) {
   $('world-name').textContent = world.metadata.name; $('world-path').textContent = world.root; $('world-path').title = world.root;
   $('metadata').replaceChildren();
   addDetail('Minecraft Java', world.metadata.version); addDetail('DataVersion', world.metadata.dataVersion); addDetail('Seed', world.metadata.seed);
+  const configuration = world.metadata.configuration;
+  if (configuration) {
+    addDetail('Enabled features', configuration.enabledFeatures === null ? 'Unrecorded / unrecognized' : configuration.enabledFeatures.join(', ') || 'Recorded empty list');
+    addDetail('Enabled datapacks', configuration.enabledPacks === null ? 'Unrecorded / unrecognized' : configuration.enabledPacks.join(', ') || 'Recorded empty list');
+    addDetail('Generation settings', configuration.generationSource ?? 'Unknown · no recognized settings found');
+    for (const setting of configuration.generatorSettings) addDetail(setting.dimension, setting.settings ?? 'Unknown generator settings');
+    addDetail('Experiment history', configuration.featureHistory);
+  }
   addDetail('Game mode', ['Survival', 'Creative', 'Adventure', 'Spectator'][world.metadata.gameMode] ?? 'Unknown');
   const time = Number(world.metadata.lastPlayed), date = new Date(time);
   addDetail('Last played', world.metadata.lastPlayed && Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Unavailable');

@@ -1,10 +1,20 @@
-# WorldRenew 0.5.4-test.1 experimental test builds
+# WorldRenew 0.5.5-test.1 development test builds
 
 Standalone desktop tools for inspecting and preserving Minecraft Java Edition worlds. One shared application for Windows x64 and Apple Silicon macOS; no mod or separate Java/Node installation is required for packaged builds.
 
-**Experimental, unsigned test builds. Use disposable world copies only. Minecraft game-load, multiplayer login, portal travel, farm functionality and terrain continuity are not certified. Native Windows execution of this parser-fix build and validation against the reported failing world remain pending.**
+**Experimental, unsigned test builds. Use disposable world copies only. Minecraft game-load, multiplayer login, portal travel, farm functionality and terrain continuity are not certified. Native Windows installer/runtime validation and Minecraft gameplay acceptance remain pending.**
 
-## Downloads and launch
+## Development branch
+
+`feature/detailed-terrain` contains the next local test build. **0.5.5-test.1 has not been published as a release.** The released 0.5.4 files remain unchanged.
+
+- [Detailed terrain map](TERRAIN-MAP.md): saved block colors and elevation shading, chunk grid, coordinate navigation, selection/protection, bounded asynchronous tiles and dimension-aware Nether cavern/roof views.
+- [Local template library](LOCAL-TEMPLATES.md): named portable builds, import/export, drag-and-drop, safe duplicate names and reopening without the source world.
+- [Air-placement modes](AIR-PLACEMENT.md): preserve captured air or explicitly skip it, with counts and a fresh review before writing a separate copy.
+- [Vanilla/datapack compatibility](VANILLA-COMPATIBILITY.md): preserve recorded configuration without treating experimental flags as a blanket rejection.
+- [Windows installer](WINDOWS-INSTALLER.md): persistent per-user installation, Start menu/desktop shortcuts and retained app data on upgrade/uninstall. Native installation testing is still pending.
+
+## Published 0.5.4 downloads and launch
 
 Get the Windows portable EXE or Apple Silicon app ZIP from [the experimental prerelease](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.4-test.1). Verify the matching SHA-256 checksum before opening.
 
@@ -26,10 +36,10 @@ All **204 synthetic tests passed**, including a nine-chunk mixed-palette fixture
 
 ## Current features and format limits
 
-- Local Java world metadata/dimension inspection, structural checks and chunk map.
+- Local Java world metadata/dimension inspection, structural checks and a detailed terrain map for exact stable 26.2/4903 and 26.3/5023 vanilla dimensions.
 - Bulk chunk protection, buffers, external plans, fresh previews and byte-verified copies.
 - 3D exploration and exact rectangular build selection, saved selections, local textures/models and conflict previews.
-- Portable `.wrbuild` archives that can be reopened without the source world.
+- Local portable `.wrbuild` library and transfer files that reopen without the source world, with explicit include/skip air placement.
 - Experimental regeneration export: exact stable Java **26.3 / DataVersion and Version.Id 5023**, namespaced Overworld only. Requires review and acknowledgments, keeps a verified backup, removes selected terrain/entity/POI records only from a new result copy, and checks preservation. Minecraft generates missing terrain when the copy is loaded. The app does not generate terrain or upgrade a save.
 - Restricted copied-world build placement: exact **26.2 / 4903**, supported building blocks, same vanilla dimension and validated surrounding chunks. Entities, inventories/block entities, POI, scheduled updates and other unsupported dependencies block placement. 26.3 archives can be read/previewed but cannot be placed.
 - Optional update checking and verified download staging exist, but the release repository/public keys are **unconfigured**. Publishing a GitHub release does not remotely update installed copies. Automatic installation is not implemented; download and replace test builds manually.
@@ -38,7 +48,7 @@ General world merging, terrain blending, farm adaptation, Nether/End regeneratio
 
 ## Build and test
 
-Clone this repository at tag `v0.5.4-test.1` and enter its root folder, or extract the Source code ZIP for that tag. The reviewed snapshot contains source, tests, build scripts, pinned dependencies and sanitized audit evidence. In the browsable repository, the CI workflow is stored as `disabled-workflows/test-builds.yml.txt`; there are no active GitHub Actions workflows. The historical source ZIP retains its original workflow file, which does not run while archived.
+Clone this repository and check out `feature/detailed-terrain` for these changes. Use tag `v0.5.4-test.1` for the unchanged published release. The reviewed snapshot contains source, tests, build scripts, pinned dependencies and sanitized audit evidence. In the browsable repository, the CI workflow is stored as `disabled-workflows/test-builds.yml.txt`; there are no active GitHub Actions workflows. The historical source ZIP retains its original workflow file, which does not run while archived.
 
 Use Node 22.12+ (audited with 24.19.0), npm and a local writable checkout. Dependencies are pinned in the lockfile.
 
@@ -53,6 +63,7 @@ On Windows PowerShell, use `npm.cmd` if script execution policy blocks `npm.ps1`
 ```sh
 npm run build:test:macos    # Apple Silicon Mac distribution
 npm run build:test:windows  # Windows x64 distribution
+npm run build:installer:windows # Windows x64 installer
 npm run test:packaged       # Run on the matching native OS/architecture
 ```
 

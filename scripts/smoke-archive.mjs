@@ -22,9 +22,21 @@ try{
  await app.evaluate(({dialog},f)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[f]});},destination);await page.click('#next-placement');await page.click('#build-open-destination');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Destination opened'));
  for(const[k,v]of Object.entries({x:20,y:2,z:20}))await page.fill(`#build-anchor-${k}`,String(v));await page.click('#build-preview');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Placement preview complete'));
  assert.ok((await page.textContent('#copy-eligibility')).startsWith('Ready for'));assert.equal(await page.isDisabled('#build-place-copy'),true);await page.check('#placement-closed');assert.equal(await page.isDisabled('#build-place-copy'),false);
+ // Air policy is part of the reviewed operation, and changing it clears approval.
+ const includedChanged=Number(await page.getAttribute('#air-effect-counts','data-changed'));
+ assert.equal(Number(await page.getAttribute('#air-effect-counts','data-skipped')),0);
+ await page.selectOption('#placement-air-mode','skip');
+ assert.equal(await page.isDisabled('#build-place-copy'),true);assert.equal(await page.isChecked('#placement-closed'),false);
+ await page.click('#build-preview');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Placement preview complete'));
+ assert.ok(Number(await page.getAttribute('#air-effect-counts','data-skipped'))>0);
+ assert.ok(Number(await page.getAttribute('#air-effect-counts','data-changed'))<includedChanged);
+ await page.screenshot({path:path.join(work,'skip-air-review.png')});
+ await page.selectOption('#placement-air-mode','include');
+ assert.equal(await page.isDisabled('#build-place-copy'),true);assert.equal(await page.isChecked('#placement-closed'),false);
+ await page.click('#build-preview');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Placement preview complete'));await page.check('#placement-closed');
  // Moving placement invalidates both review and the closed-world acknowledgment.
  await page.fill('#build-anchor-x','21');assert.equal(await page.isDisabled('#build-place-copy'),true);assert.equal(await page.isChecked('#placement-closed'),false);await page.fill('#build-anchor-x','20');await page.click('#build-preview');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Placement preview complete'));await page.check('#placement-closed');
  await page.screenshot({path:path.join(work,'review-placement.png')});await app.evaluate(({dialog},f)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[f]});},work);await page.click('#build-place-copy');await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Test world copy created'),{timeout:30000});
  assert.ok((await page.getAttribute('#placement-result','title')).includes('Validation report:'));assert.deepEqual(hashes(destination),before);assert.deepEqual(hashes(source+'-offline'),sourceBefore);assert.deepEqual(errors,[]);await page.screenshot({path:path.join(work,'created-copy.png')});
- console.log(`PASS: portable save, cold-start load without source, frozen bounds, placement review invalidation, explicit closed-world acknowledgment, validated copied world, unchanged originals, no renderer errors.\nArtifacts: ${work}`);
+ console.log(`PASS: portable save, cold-start load without source, frozen bounds, air-mode counts and review invalidation, explicit closed-world acknowledgment, validated copied world, unchanged originals, no renderer errors.\nArtifacts: ${work}`);
 }finally{await app.close();}

@@ -58,7 +58,7 @@ export class Spectator {
         }
         if(owners.length+unknownOwners.length+transparentOwners.length>=180000){limited=true;break outer;}
         const style=atlas?(model?q.style:faceStyles[v.voxels[c.i]]?.[fi]):null,rect=style??atlas?.blank,shade=q.shade===false?1:faces[fi][2];
-        color.set(style?(style.tint?(c.s.Name==='minecraft:water'?'#4785dc':'#91bd59'):'#ffffff'):overlay&&c.diff?['#526b69','#91dfa6','#efb164','#ef7f88','#da9aeb','#80b5ef','#b8a5ee'][c.diff]:overlay?'#354b4b':this.options.color(c.s));
+        color.set(style?(style.tint?(c.s.Name==='minecraft:water'?'#4785dc':'#91bd59'):'#ffffff'):overlay&&c.diff?['#526b69','#91dfa6','#efb164','#ef7f88','#da9aeb','#80b5ef','#b8a5ee','#8aa7a9'][c.diff]:overlay?'#354b4b':this.options.color(c.s));
         const translucent=c.s&&atlas&&q.translucent,pointsOut=!c.s?unknownPositions:translucent?transparentPositions:positions,colorsOut=!c.s?unknownColors:translucent?transparentColors:colors,uvOut=translucent?transparentUvs:uvs;
         for(const corner of [0,1,2,0,2,3]){
           const p=q.points[corner];if(c.s&&rect){const [u,t]=q.uvs[corner];uvOut.push(rect.u0+u*(rect.u1-rect.u0),rect.v1-t*(rect.v1-rect.v0));}

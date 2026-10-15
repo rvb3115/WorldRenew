@@ -168,16 +168,16 @@ app.whenReady().then(async () => {
   handle('archive:preview',async data=>{
     if(!portableBuild||!destination)throw new Error('Open a portable build and destination first.');portableReview=null;
     const protection=loadProject(projects,destination).protection;
-    const result=await runWorker({action:'archive-preview',file:portableBuild.file,destination,destinationDimension:data?.destinationDimension,anchor:data?.anchor,protection});
+    const result=await runWorker({action:'archive-preview',file:portableBuild.file,destination,destinationDimension:data?.destinationDimension,anchor:data?.anchor,protection,options:{airMode:data?.airMode}});
     if(result.archiveDigest!==portableBuild.digest)throw new Error('Build file changed. Reopen it before reviewing placement.');
-    if(result.copyEligible)portableReview={dimension:data.destinationDimension,anchor:data.anchor,reviewDigest:result.reviewDigest};return result;
+    if(result.copyEligible)portableReview={dimension:data.destinationDimension,anchor:data.anchor,airMode:result.airMode,reviewDigest:result.reviewDigest};return result;
   });
   handle('archive:place',async data=>{
     if(!portableBuild||!portableReview||!destination||data?.reviewDigest!==portableReview.reviewDigest)throw new Error('Review an eligible placement first.');
     if(data.confirmedClosed!==true)throw new Error('Confirm Minecraft and servers are closed.');
     const choice=await dialog.showOpenDialog(win,{title:'Choose a folder for the backup and separate test world',properties:['openDirectory','createDirectory']});if(choice.canceled)return null;
     const protection=loadProject(projects,destination).protection;
-    const result=await runWorker({action:'archive-place',file:portableBuild.file,destination,destinationDimension:portableReview.dimension,anchor:portableReview.anchor,parent:choice.filePaths[0],options:{confirmedClosed:true,reviewDigest:portableReview.reviewDigest,protection}});portableReview=null;lastPlacedCopy=result;return result;
+    const result=await runWorker({action:'archive-place',file:portableBuild.file,destination,destinationDimension:portableReview.dimension,anchor:portableReview.anchor,parent:choice.filePaths[0],options:{confirmedClosed:true,reviewDigest:portableReview.reviewDigest,protection,airMode:portableReview.airMode}});portableReview=null;lastPlacedCopy=result;return result;
   });
   handle('archive:reveal',()=>{if(!lastPlacedCopy)throw new Error('Create a test copy first.');shell.showItemInFolder(lastPlacedCopy.world);return true;});
   handle('build:capture', async data => {
@@ -201,10 +201,10 @@ app.whenReady().then(async () => {
   handle('build:preview', async data => {
     if (!current || !destination) throw new Error('Open both source and destination worlds.');
     transfer = null;
-    const result = await runWorker({ action: 'transfer', world: current, dimension: data?.dimension, bounds: data?.bounds, destination, destinationDimension: data?.destinationDimension, anchor: data?.anchor });
+    const result = await runWorker({ action: 'transfer', world: current, dimension: data?.dimension, bounds: data?.bounds, destination, destinationDimension: data?.destinationDimension, anchor: data?.anchor, options: { airMode: data?.airMode } });
     // Keep only a review manifest, not potentially large voxel arrays, in the coordinator.
     const describe = volume => ({ world: volume.root, dimension: volume.dimension, version: volume.version, dataVersion: volume.dataVersion, bounds: volume.bounds, digest: volume.digest, stats: volume.stats, complete: volume.complete, snapshots: volume.snapshots, issues: volume.issues });
-    transfer = { schemaVersion: 1, executable: false, mode: result.mode, createdAt: new Date().toISOString(), source: describe(result.source), destination: describe(result.destination), anchor: result.anchor, counts: result.counts, boundary: result.boundary, portals: result.portals, blockers: result.blockers, warnings: result.warnings };
+    transfer = { schemaVersion: 1, executable: false, mode: result.mode, airMode: result.airMode, effects: result.effects, createdAt: new Date().toISOString(), source: describe(result.source), destination: describe(result.destination), anchor: result.anchor, counts: result.counts, boundary: result.boundary, portals: result.portals, blockers: result.blockers, warnings: result.warnings };
     return result;
   });
   handle('build:save', () => {

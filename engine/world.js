@@ -5,6 +5,7 @@ import { decodeDat, NBT_LIMITS } from './nbt.js';
 import { canonicalWorld, readBounded, safePath } from './paths.js';
 import { REGION_NAME, inspectRegion } from './anvil.js';
 import { requireThat } from './errors.js';
+import { configurationSummary } from './world-configuration.js';
 import { versionPolicy, capabilities } from './versions.js';
 
 const compound = v => v && typeof v === 'object' && !Array.isArray(v) && !Buffer.isBuffer(v);
@@ -24,16 +25,18 @@ export function inspectWorld(folder, progress = () => {}) {
   const data = level.Data, version = compound(data.Version) ? data.Version : {};
   let seed = seedValue(data.WorldGenSettings?.seed) ?? seedValue(data.RandomSeed);
   const generationFile = 'data/minecraft/world_gen_settings.dat';
-  let generationFingerprint = null;
+  let generationFingerprint = null, generationSettings = data.WorldGenSettings, generationSource = generationSettings ? 'level.dat:Data.WorldGenSettings' : null;
   try {
     const generationBytes = readBounded(root, generationFile, NBT_LIMITS.compressed);
     generationFingerprint = createHash('sha256').update(generationBytes).digest('hex');
     const generation = decodeDat(generationBytes);
+    generationSettings = generation.data ?? generation.Data ?? generation; generationSource = generationFile;
     seed = seedValue(generation.data?.seed) ?? seedValue(generation.Data?.seed) ?? seedValue(generation.seed) ?? seed;
   } catch (error) { if (error.code !== 'ENOENT') { const message = `World-generation metadata: ${error.message}`; warn(message); validationErrors.push(message); } }
   const metadata = {
     name: string(data.LevelName) ?? path.basename(root), version: string(version.Name) ?? 'Unknown',
     dataVersion: integer(data.DataVersion) ?? integer(version.Id), versionId: integer(version.Id),
+    configuration: configurationSummary(data, generationSettings, generationSource),
     snapshot: version.Snapshot === 1, seed, lastPlayed: string(data.LastPlayed),
     gameMode: integer(data.GameType), hardcore: data.hardcore === 1,
     spawn: Array.isArray(data.spawn?.pos) && data.spawn.pos.length === 3 && data.spawn.pos.every(Number.isSafeInteger)
@@ -41,6 +44,7 @@ export function inspectWorld(folder, progress = () => {}) {
       : [data.SpawnX, data.SpawnY, data.SpawnZ].every(Number.isSafeInteger) ? { x: data.SpawnX, y: data.SpawnY, z: data.SpawnZ } : null,
     policy: versionPolicy(string(version.Name), version.Snapshot === 1)
   };
+  for (const note of metadata.configuration.notices) warn(note);
   if (seed === null) warn('Seed was not found in recognized metadata fields.');
   if (metadata.dataVersion === null) warn('DataVersion is missing or not an integer.');
   warn('Header inspection only: chunk block data, entities, POI contents and gameplay integrity have not been validated.');
