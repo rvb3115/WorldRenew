@@ -1,6 +1,7 @@
 import {_electron as electron} from 'playwright';
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {fileURLToPath} from 'node:url';import {createHash} from 'node:crypto';
 import {writeDat} from '../tests/fixtures.js';import {writeTerrainRegion} from '../tests/terrain-fixtures.js';import {state} from '../tests/transfer-fixtures.js';
+import {recordSmokeLifecycle} from './smoke-lifecycle.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');fs.mkdirSync(path.join(root,'work'),{recursive:true});
 const work=fs.mkdtempSync(path.join(root,'work/preview-location-smoke-')),source=path.join(work,'source'),profile=path.join(work,'profile');
 writeDat(path.join(source,'level.dat'),{Data:[10,{LevelName:[8,'Asymmetric preview landmarks'],DataVersion:[3,4903],Version:[10,{Name:[8,'26.2'],Id:[3,4903],Snapshot:[1,0]}],SpawnX:[3,0],SpawnY:[3,65],SpawnZ:[3,0]}]});
@@ -11,14 +12,15 @@ writeTerrainRegion(path.join(source,'dimensions/minecraft/the_nether/region/r.-1
 const hashes=()=>fs.readdirSync(source,{recursive:true,withFileTypes:true}).filter(e=>e.isFile()).map(e=>{const file=path.join(e.parentPath,e.name);return [path.relative(source,file),createHash('sha256').update(fs.readFileSync(file)).digest('hex')];}).sort();
 const before=hashes(),env={...process.env,WORLDRENEW_USER_DATA:profile,WORLDRENEW_BACKGROUND_TEST:'1'};delete env.ELECTRON_RUN_AS_NODE;
 const executablePath=process.env.WORLDRENEW_EXECUTABLE,app=await electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:[root]),`--world=${source}`],env,timeout:30000});
-const errors=[];let page;
+const errors=[];let page,lifecycle;
 const expected={minX:-48,maxX:-33,minY:-64,maxY:319,minZ:32,maxZ:47};
 async function select(x1,z1,x2=x1,z2=z1){await page.click('#select-range');for(const[k,v]of Object.entries({x1,z1,x2,z2}))await page.fill('#'+k,String(v));await page.click('#select-area');await page.click('#toggle-protection');}
 async function topo(){await page.selectOption('#map-view','topographic');await page.waitForFunction(()=>document.getElementById('topographic-map').dataset.building==='0'&&document.getElementById('terrain-status').dataset.pending==='0',null,{timeout:60000});await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));}
 async function scanned(){await page.waitForFunction(()=>document.getElementById('build-status').textContent.startsWith('Read ')&&!document.getElementById('build-capture').disabled,null,{timeout:60000});}
 async function assertPreview(bounds,dimension){assert.deepEqual(JSON.parse(await page.getAttribute('#build-3d','data-loaded-bounds')),bounds);assert.equal(await page.getAttribute('#build-3d','data-dimension'),dimension);assert.deepEqual(JSON.parse(await page.getAttribute('#build-3d','data-frame-center')),{x:(bounds.minX+bounds.maxX+1)/2,y:(bounds.minY+bounds.maxY+1)/2,z:(bounds.minZ+bounds.maxZ+1)/2});assert.ok(Number(await page.getAttribute('#build-3d','data-face-count'))>0);}
 try{
-  page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));await page.click('#open');await page.waitForFunction(()=>!document.getElementById('open-transfer').disabled);await page.evaluate(()=>document.getElementById('use-textures').checked=false);
+  lifecycle=await recordSmokeLifecycle(app,work);
+  page=await app.firstWindow();lifecycle.observePage(page);lifecycle.record('scenario-start');page.on('pageerror',e=>errors.push(e.message));await page.click('#open');await page.waitForFunction(()=>!document.getElementById('open-transfer').disabled);await page.evaluate(()=>document.getElementById('use-textures').checked=false);
   const dimensions=await page.locator('#dimension option').evaluateAll(options=>Object.fromEntries(options.map(o=>[o.textContent.startsWith('The Nether')?'nether':'overworld',o.value])));
   await select(-3,2);await page.fill('#map-x','640');await page.fill('#map-z','-128');await page.click('#map-jump');await topo();
   assert.equal(await page.getAttribute('#topographic-map','data-center-x'),'-40');assert.equal(await page.getAttribute('#topographic-map','data-center-z'),'40');assert.equal(await page.getAttribute('#topographic-map','data-yaw'),'0');
@@ -34,7 +36,7 @@ try{
   await page.click('#build-capture');await page.waitForFunction(()=>document.getElementById('build-status').classList.contains('error'));assert.equal(await page.getAttribute('#build-3d','data-face-count'),'0');await page.click('#close-build');
   // Another dimension uses its exact key and height, even at the same X/Z.
   await page.selectOption('#dimension',dimensions.nether);await page.selectOption('#map-view','topdown');await select(-3,2);await topo();await page.click('#open-transfer');await scanned();await assertPreview({...expected,minY:0,maxY:255},dimensions.nether);await page.screenshot({path:path.join(work,'selected-nether-preview.png')});await page.click('#close-build');
-  await page.selectOption('#dimension',dimensions.overworld);await page.selectOption('#map-view','topdown');await select(-3,2,-1,2);await page.click('#open-transfer');await scanned();await assertPreview({...expected,maxX:-1},dimensions.overworld);assert.match(await page.textContent('#build-status'),/unselected gaps/);await page.click('#close-build');
+  lifecycle.record('disjoint-overworld-preview');await page.selectOption('#dimension',dimensions.overworld);await page.selectOption('#map-view','topdown');await select(-3,2,-1,2);await page.click('#open-transfer');await scanned();await assertPreview({...expected,maxX:-1},dimensions.overworld);assert.match(await page.textContent('#build-status'),/unselected gaps/);await page.click('#close-build');
   // Large disconnected bounds stay exact and are rejected, never replaced by spawn.
   await page.click('#select-all');await page.click('#open-transfer');await page.waitForFunction(()=>document.getElementById('build-status').textContent.includes('No substitute area'));assert.equal(await page.getAttribute('#build-3d','data-face-count'),'0');assert.equal(await page.inputValue('#build-minX'),'-48');assert.equal(await page.inputValue('#build-maxX'),'655');await page.screenshot({path:path.join(work,'bounded-preview-rejection.png')});await page.click('#close-build');
   // Delay an actual generated-world reply, then change its inputs while pending.
@@ -44,4 +46,5 @@ try{
   await page.waitForFunction(()=>!document.getElementById('build-capture').disabled);assert.equal(await page.getAttribute('#build-3d','data-face-count'),'0');assert.equal(await page.getAttribute('#build-3d','data-loaded-bounds'),null);assert.match(await page.textContent('#build-status'),/Selection changed/);
   assert.deepEqual(hashes(),before);assert.deepEqual(errors,[]);
   const report={passed:true,generatedFixturesOnly:true,sourceUnchanged:true,visibleRedTerrainPixels:red.count,checks:['explicit topographic selection overrides old center and pose','visible selected terrain pixels and exact hover through surrounding absent chunks','negative chunk bounds','block preview frames requested bounds','invalid selection clears stale geometry','exact dimension and vanilla height','disjoint bounds disclose intervening gaps','oversized selections never substitute spawn','stale asynchronous source response ignored'],screenshots:work};fs.writeFileSync(path.join(work,'results.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
-}catch(error){if(page){console.error(await page.textContent('#build-status').catch(()=>''));await page.screenshot({path:path.join(work,'failure.png')}).catch(()=>{});}console.error('Evidence:',work);throw error;}finally{await app.close();}
+  lifecycle.record('scenario-passed');
+}catch(error){lifecycle?.record('scenario-failed',{message:error.message,stack:error.stack});if(page){console.error(await page.textContent('#build-status').catch(()=>''));await page.screenshot({path:path.join(work,'failure.png')}).catch(()=>{});}console.error('Evidence:',work);throw error;}finally{lifecycle?.record('harness-close-request');await app.close();lifecycle?.record('harness-close-complete');}
