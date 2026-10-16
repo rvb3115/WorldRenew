@@ -38,7 +38,7 @@ test('owned export preserves source/backup, protected and buffered records, ever
   assert.deepEqual(treeHashes(result.backup), before);
   const after = treeHashes(result.world);
   assert.deepEqual(Object.keys(after), Object.keys(before));
-  const modified = new Set(['region', 'entities', 'poi'].map(s => regionPath('overworld', s)));
+  const modified = new Set(['region', 'entities', 'poi'].map(s => path.normalize(regionPath('overworld', s))));
   for (const [file, sha] of Object.entries(before)) {
     if (!modified.has(file)) { assert.equal(after[file], sha, file); continue; }
     for (const x of [0, 1, 31]) {

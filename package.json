@@ -34,7 +34,8 @@
     "test:overview": "node scripts/smoke-map-overview.mjs",
     "test:terrain-cache": "node scripts/smoke-terrain-cache.mjs",
     "test:template-editor": "node scripts/smoke-template-editor.mjs",
-    "test:recovery": "node scripts/smoke-recovery.mjs"
+    "test:recovery": "node scripts/smoke-recovery.mjs",
+    "test:regeneration-roundtrip": "node scripts/smoke-regeneration-roundtrip.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
