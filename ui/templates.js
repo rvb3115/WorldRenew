@@ -62,7 +62,7 @@
   document.addEventListener('drop', async event => {
     if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
     event.preventDefault(); $('templates-drop').classList.remove('dragging');
-    if (working || document.body.classList.contains('busy') || window.transferBusy || $('build-dialog').open || $('template-editor').open) return;
+    if (working || document.body.classList.contains('busy') || window.transferBusy || $('build-dialog').open || $('template-editor').open || $('recovery-dialog').open) return;
     if (!dialog.open) dialog.showModal();
     const files = Array.from(event.dataTransfer?.files ?? []);
     if (files.length !== 1 || !/\.wrbuild$/i.test(files[0].name)) { status('Drop one .wrbuild file.', true); return; }

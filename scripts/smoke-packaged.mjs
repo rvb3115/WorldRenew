@@ -43,6 +43,7 @@ for (const script of ['scripts/smoke-desktop.mjs', 'scripts/smoke-transfer.mjs',
 run(process.execPath, ['scripts/smoke-terrain.mjs', '--legacy-1.21.11'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-topographic.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-preservation.mjs'], { WORLDRENEW_EXECUTABLE: executable });
+run(process.execPath, ['scripts/smoke-recovery.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-updates.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-terrain-cache.mjs'], { WORLDRENEW_EXECUTABLE: executable });
 run(process.execPath, ['scripts/smoke-preview-location.mjs'], { WORLDRENEW_EXECUTABLE: executable });
@@ -94,6 +95,7 @@ if (process.platform === 'win32') {
 } else checks.push('distributed ZIP extracts with valid ad-hoc seal, arm64 binary, executable modes and working bundle');
 checks.push('Complete overview, persistent cache, cold/warm native opens and dimension camera/selection retention');
 checks.push('Exact selected-area 3D framing, negative coordinates, dimension identity and stale-response rejection');
+checks.push('Regeneration backup recovery without a source world, interrupted exports, stale review and invalid-backup blocking');
 checks.push('GitHub update preferences, checksum staging and reveal without executing a package');
 const report = { passed: true, target, version: pkg.version, artifact: metadata.file, sha256: metadata.sha256, checkedAt: new Date().toISOString(), checks, originalWorldsUsed: false, gameLoadTested: false };
 fs.writeFileSync(path.join(artifactDir, 'smoke-results.json'), JSON.stringify(report, null, 2) + '\n');

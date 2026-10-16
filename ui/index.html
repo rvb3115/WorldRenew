@@ -9,10 +9,11 @@
   <link rel="stylesheet" href="transfer.css">
   <link rel="stylesheet" href="simple.css">
   <link rel="stylesheet" href="template-editor.css">
+  <link rel="stylesheet" href="recovery.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.11-test.1</span></div>
+    <div class="brand"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 11 18 3l15 8-15 8Z" fill="#7dddc0"/><path d="M3 15l13 7v12L3 27Z" fill="#359e85"/><path d="m20 22 13-7v12l-13 7Z" fill="#4cbaa0"/></svg><strong>WorldRenew</strong><span class="version">0.5.12-test.1</span></div>
     <div class="header-actions"><span class="pill"><i></i> Original saves stay unchanged</span><button id="templates-open">Templates</button><button id="open-build-file">Import template…</button><button id="open" class="primary">Open world folder <span aria-hidden="true">↗</span></button></div>
   </header>
   <main>
@@ -23,6 +24,7 @@
       
       
       <div class="sidebar-rule"></div>
+      <button id="recovery-open" class="full">Recover a backup…</button>
       <details class="plain-details" id="updates-panel"><summary>Application updates</summary>
         <p id="update-version" class="small"></p>
         <label><input type="checkbox" id="update-auto-check"> Check automatically at startup</label>
@@ -151,6 +153,23 @@
       </aside>
     </div><footer class="template-editor-footer"><span id="template-editor-status" role="status" aria-live="polite">Original world files stay unchanged.</span><button id="template-cancel" hidden>Cancel operation</button></footer>
   </dialog>
+  <dialog id="recovery-dialog" aria-labelledby="recovery-title">
+    <header class="recovery-header"><div><span class="eyebrow">Regeneration copies</span><h2 id="recovery-title">Recover a backup</h2></div><button id="recovery-close" aria-label="Close recovery">Close</button></header>
+    <div class="recovery-body">
+      <p>Choose a completed or interrupted WorldRenew regeneration export folder. Recovery checks its retained backup and makes a new copy.</p>
+      <div class="recovery-actions"><button id="recovery-choose">Choose export folder…</button><button id="recovery-refresh" disabled>Verify again</button></div>
+      <p id="recovery-directory" class="path">No export folder chosen.</p>
+      <section id="recovery-review" hidden aria-label="Backup verification">
+        <h3 id="recovery-state"></h3><dl id="recovery-details"></dl><ul id="recovery-blockers"></ul>
+        <p class="small">Only the retained backup is copied. An incomplete regeneration result is never resumed or promoted. Matching file hashes verify the backup’s bytes, not whether Minecraft can load it.</p>
+      </section>
+      <label class="recovery-confirm"><input id="recovery-closed" type="checkbox" disabled> Minecraft and servers using this backup are closed.</label>
+      <button id="recovery-restore" class="primary" disabled>Create recovered copy…</button>
+      <p id="recovery-status" role="status" aria-live="polite">Your original world and retained backup stay unchanged.</p>
+      <p id="recovery-result" class="path" hidden></p><button id="recovery-reveal" hidden>Show recovered copy</button>
+    </div>
+  </dialog>
+  <script src="recovery.js"></script>
   <script src="template-editor.js"></script>
   <script src="templates.js"></script>
   <script type="module" src="renderer.js"></script>

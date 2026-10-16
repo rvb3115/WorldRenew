@@ -1,6 +1,6 @@
 {
   "name": "worldrenew",
-  "version": "0.5.11-test.1",
+  "version": "0.5.12-test.1",
   "private": true,
   "description": "Read-only Minecraft Java world inspection and safe migration groundwork",
   "type": "module",
@@ -33,7 +33,8 @@
     "test:topographic": "node scripts/smoke-topographic.mjs",
     "test:overview": "node scripts/smoke-map-overview.mjs",
     "test:terrain-cache": "node scripts/smoke-terrain-cache.mjs",
-    "test:template-editor": "node scripts/smoke-template-editor.mjs"
+    "test:template-editor": "node scripts/smoke-template-editor.mjs",
+    "test:recovery": "node scripts/smoke-recovery.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

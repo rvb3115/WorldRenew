@@ -1,4 +1,4 @@
-# WorldRenew 0.5.11-test.1 development test builds
+# WorldRenew 0.5.12-test.1 development test builds
 
 Standalone desktop tools for inspecting and preserving Minecraft Java Edition worlds. One shared application for Windows x64 and Apple Silicon macOS; no mod or separate Java/Node installation is required for packaged builds.
 
@@ -6,8 +6,9 @@ Standalone desktop tools for inspecting and preserving Minecraft Java Edition wo
 
 ## Development branch
 
-`fix/large-world-overview` contains the next local test build. **0.5.11-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
+`feature/regeneration-recovery` contains the next local test build. **0.5.12-test.1 has not been published as a release.** The published [0.5.5 test release](https://github.com/rvb3115/WorldRenew/releases/tag/v0.5.5-test.1), earlier 0.5.4 files and local 0.5.6 compatibility artifacts remain unchanged.
 
+- [Regeneration backup recovery](REGENERATION-RECOVERY.md): inspect retained backups from completed or interrupted exports, verify their complete file inventory, and restore into a new copy with fresh checks and explicit closed-world confirmation. Incomplete or invalid backups stay blocked.
 - [Large-world loading and selected-area preview fixes](LARGE-WORLD-PERFORMANCE.md): visible areas load first, actual samples spread across regions, then contiguous batches fill the overview. Pause/Resume keeps visible detail available. Completed batches persist outside the save; unknown chunks remain pending or explicitly unavailable. Mac development bundles and extracted smoke apps stay in hidden `.noindex` folders and test registrations are removed after packaged checks.
 - [Detailed terrain map](TERRAIN-MAP.md): saved block colors and elevation shading, chunk grid, coordinate navigation, selection/protection, bounded asynchronous tiles and dimension-aware Nether cavern/roof views.
 - [Java 1.21.11 terrain compatibility](TERRAIN-1.21.11.md): schema-validated read-only map support for DataVersion 4671; existing 3D capture and export gates stay unchanged.
@@ -53,7 +54,7 @@ General world merging, terrain blending, farm adaptation, Nether/End regeneratio
 
 ## Build and test
 
-Clone this repository and check out `fix/large-world-overview` for these changes. Use tag `v0.5.4-test.1` for the unchanged published release. The reviewed snapshot contains source, tests, build scripts, pinned dependencies and sanitized audit evidence. In the browsable repository, the CI workflow is stored as `disabled-workflows/test-builds.yml.txt`; there are no active GitHub Actions workflows. The historical source ZIP retains its original workflow file, which does not run while archived.
+Clone this repository and check out `feature/regeneration-recovery` for these changes. Use tag `v0.5.4-test.1` for the unchanged published release. The reviewed snapshot contains source, tests, build scripts, pinned dependencies and sanitized audit evidence. In the browsable repository, the CI workflow is stored as `disabled-workflows/test-builds.yml.txt`; there are no active GitHub Actions workflows. The historical source ZIP retains its original workflow file, which does not run while archived.
 
 Use Node 22.12+ (audited with 24.19.0), npm and a local writable checkout. Dependencies are pinned in the lockfile.
 

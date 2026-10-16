@@ -5,6 +5,7 @@ import {importTemplateStream,exportTemplateStream,listTemplatesStream} from '../
 import { importTemplate, saveTemplate, openTemplate, exportTemplate, listTemplates } from '../engine/template-library.js';
 import { createRegenerationReview, saveRegenerationReview } from '../engine/regeneration.js';
 import { createRegeneratedCopy } from '../engine/regeneration-export.js';
+import { inspectRegenerationRecovery, createRecoveredRegenerationCopy } from '../engine/regeneration-recovery.js';
 import {captureBuildArchive,saveBuildFile,readBuildFile} from '../engine/build-archive.js';
 import {previewBuildFile,createPlacedCopy} from '../engine/copy-placement.js';
 import { textureBundle } from '../engine/assets.js';
@@ -40,6 +41,8 @@ try {
     case 'regeneration-review': result = createRegenerationReview(workerData.world, workerData.selected, workerData.protection, workerData.options, progress); break;
     case 'regeneration-save': result = saveRegenerationReview(workerData.directory, workerData.world, workerData.review, progress); break;
     case 'regeneration-export': result = createRegeneratedCopy(workerData.world, workerData.review, workerData.parent, workerData.options, progress); break;
+    case 'recovery-inspect': result = inspectRegenerationRecovery(workerData.directory, progress); break;
+    case 'recovery-restore': result = createRecoveredRegenerationCopy(workerData.directory, workerData.reviewDigest, workerData.parent, workerData.options, progress); break;
     case 'inspect': result = inspectWorld(workerData.folder, progress); break;
     case 'copy': result = createVerifiedCopy(workerData.folder, workerData.parent, workerData.options, progress); break;
     case 'capture': result = captureVolume(workerData.world, workerData.dimension, workerData.bounds, progress); break;

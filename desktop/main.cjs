@@ -14,6 +14,7 @@ const {defaultWorldDirectory,rememberedDirectory,rememberWorldDirectory}=require
 let win, current = null, busy = false, updater;
 let portableBuild=null,portableReview=null,lastPlacedCopy=null;
 let textureSource = null, regenerationReview = null, lastRegeneratedCopy = null;
+let recoveryReview = null, lastRecoveredCopy = null;
 let destination = null, transfer = null, capturedBuild = null;
 const workers = new Set();
 const { TerrainService } = require('./terrain-service.cjs');
@@ -140,6 +141,30 @@ app.whenReady().then(async () => {
     } finally { regenerationReview = null; }
   });
   handle('plan:reveal', () => { if (!lastRegeneratedCopy) throw new Error('Create a regeneration test copy first.'); shell.showItemInFolder(lastRegeneratedCopy.world); return true; });
+  handle('recovery:open', async () => {
+    const choice = await dialog.showOpenDialog(win, { title: 'Choose a regeneration export folder', properties: ['openDirectory', 'showHiddenFiles'] });
+    if (choice.canceled) return null;
+    recoveryReview = null;
+    recoveryReview = await runWorker({ action: 'recovery-inspect', directory: choice.filePaths[0] });
+    return recoveryReview;
+  });
+  handle('recovery:refresh', async () => {
+    if (!recoveryReview) throw new Error('Choose a regeneration export folder first.');
+    const directory = recoveryReview.directory; recoveryReview = null;
+    recoveryReview = await runWorker({ action: 'recovery-inspect', directory });
+    return recoveryReview;
+  });
+  handle('recovery:restore', async data => {
+    if (!recoveryReview?.recoverable || data?.reviewDigest !== recoveryReview.reviewDigest) throw new Error('Verify the retained backup before recovering a copy.');
+    if (data.confirmedClosed !== true) throw new Error('Confirm Minecraft and servers using the backup are closed.');
+    const choice = await dialog.showOpenDialog(win, { title: 'Choose a folder for the recovered copy', properties: ['openDirectory', 'createDirectory'] });
+    if (choice.canceled) return null;
+    try {
+      lastRecoveredCopy = await runWorker({ action: 'recovery-restore', directory: recoveryReview.directory, reviewDigest: recoveryReview.reviewDigest, parent: choice.filePaths[0], options: { confirmedClosed: true, worlds: openWorldRoots() } });
+      return lastRecoveredCopy;
+    } finally { recoveryReview = null; }
+  });
+  handle('recovery:reveal', () => { if (!lastRecoveredCopy) throw new Error('Create a recovered copy first.'); shell.showItemInFolder(lastRecoveredCopy.world); return true; });
   handle('world:copy', async confirmedClosed => {
     if (!current) throw new Error('Open a world first.');
     if (confirmedClosed !== true) throw new Error('Confirm Minecraft is closed before copying.');
